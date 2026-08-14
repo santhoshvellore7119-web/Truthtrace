@@ -1,3 +1,4 @@
+'use client';
 import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -20,7 +21,7 @@ export default function Home() {
     setIsAnalyzing(true);
 
     try {
-      const response = await fetch('/api/analyze', {
+      const response = await fetch('http://localhost:8000/analyze', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -162,7 +163,7 @@ export default function Home() {
                   {results.verdict}
                 </span>
                 <span className="ml-3 text-sm text-gray-600 dark:text-gray-400">
-                  Credibility Score: {results.credity_score?.toFixed(1) ?? results.credibility_score?.toFixed(1) ?? '0'}%
+                  Credibility Score: {results.credibility_score?.toFixed(1) ?? '0'}%
                 </span>
               </div>
 

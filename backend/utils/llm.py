@@ -19,11 +19,27 @@ except ImportError:
     OPENAI_AVAILABLE = False
     logger.warning("OpenAI package not installed.")
 
+try:
+    import anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+    logger.warning("Anthropic package not installed.")
+
+try:
+    import google.generativeai as genai
+    GOOGLE_AI_AVAILABLE = True
+except ImportError:
+    GOOGLE_AI_AVAILABLE = False
+    logger.warning("Google AI package not installed.")
+
 class LLMManager:
     """Manages LLM interactions with fallback to free models."""
 
     def __init__(self):
         self.openai_client = None
+        self.anthropic_client = None
+        self.google_ai_model = None
         self.local_pipeline = None
         self.model_name = None
         self._initialize()
@@ -40,6 +56,29 @@ class LLMManager:
                 return
             except Exception as e:
                 logger.warning(f"Failed to initialize OpenAI client: {e}")
+
+        # Try Anthropic if API key available
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        if anthropic_key and ANTHROPIC_AVAILABLE:
+            try:
+                self.anthropic_client = anthropic.Anthropic(api_key=anthropic_key)
+                self.model_name = "claude-3-haiku-20240307"  # or from env
+                logger.info("Initialized Anthropic client")
+                return
+            except Exception as e:
+                logger.warning(f"Failed to initialize Anthropic client: {e}")
+
+        # Try Google AI if API key available
+        google_ai_key = os.getenv("GOOGLE_AI_API_KEY")
+        if google_ai_key and GOOGLE_AI_AVAILABLE:
+            try:
+                genai.configure(api_key=google_ai_key)
+                self.google_ai_model = genai.GenerativeModel('gemini-pro')
+                self.model_name = "gemini-pro"
+                logger.info("Initialized Google AI client")
+                return
+            except Exception as e:
+                logger.warning(f"Failed to initialize Google AI client: {e}")
 
         # Try HuggingFace Inference API if HF token available (optional)
         hf_token = os.getenv("HF_API_KEY")
@@ -94,6 +133,33 @@ class LLMManager:
                 logger.error(f"OpenAI generation failed: {e}")
                 # fall through to fallback
 
+        if self.anthropic_client:
+            try:
+                response = self.anthropic_client.messages.create(
+                    model=self.model_name,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                return response.content[0].text.strip()
+            except Exception as e:
+                logger.error(f"Anthropic generation failed: {e}")
+                # fall through to fallback
+
+        if self.google_ai_model:
+            try:
+                response = self.google_ai_model.generate_content(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        max_output_tokens=max_tokens,
+                        temperature=temperature
+                    )
+                )
+                return response.text.strip()
+            except Exception as e:
+                logger.error(f"Google AI generation failed: {e}")
+                # fall through to fallback
+
         if hasattr(self, 'hf_client'):
             try:
                 # Using HF Inference API
@@ -127,7 +193,7 @@ class LLMManager:
 
     def is_available(self) -> bool:
         """Check if any LLM is available."""
-        return bool(self.openai_client or getattr(self, 'hf_client', None) or self.local_pipeline)
+        return bool(self.openai_client or self.anthropic_client or self.google_ai_model or getattr(self, 'hf_client', None) or self.local_pipeline)
 
 # Global instance
 llm_manager = LLMManager()
