@@ -31,7 +31,7 @@ try:
     GOOGLE_AI_AVAILABLE = True
 except ImportError:
     GOOGLE_AI_AVAILABLE = False
-    logger.warning("Google AI package not installed.")
+    logger.warning("Google AI package not included.")
 
 class LLMManager:
     """Manages LLM interactions with fallback to free models."""
@@ -46,6 +46,12 @@ class LLMManager:
 
     def _initialize(self):
         """Initialize LLM clients based on available API keys and libraries."""
+        # Check if we should skip local LLM loading (for testing)
+        if os.getenv("TRUTHTRACE_SKIP_LOCAL_LLM") == "1":
+            logger.warning("Skipping local LLM loading due to TRUTHTRACE_SKIP_LOCAL_LLM=1")
+            self.model_name = None
+            return
+
         # Try OpenAI first if API key available
         openai_key = os.getenv("OPENAI_API_KEY")
         if openai_key and OPENAI_AVAILABLE:

@@ -1,5 +1,6 @@
 from .base_agent import BaseAgent, AgentResult
-from ..utils.llm import get_llm_prompt
+from typing import Dict, Any
+from utils.llm import get_llm_prompt
 import re
 import logging
 
@@ -26,7 +27,7 @@ class ClaimExtractorAgent(BaseAgent):
                 return AgentResult(success=False, error="No claim text provided")
 
             # Try LLM-based extraction if available
-            from ..utils.llm import llm_manager
+            from utils.llm import llm_manager
             if llm_manager.is_available():
                 prompt = f"""Extract atomic, verifiable claims from the following text.
                 Return each claim on a new line, numbered or bulleted.

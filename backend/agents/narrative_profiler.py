@@ -1,5 +1,6 @@
 from .base_agent import BaseAgent, AgentResult
-from ..utils.llm import get_llm_prompt
+from typing import Dict, Any
+from utils.llm import get_llm_prompt
 import json
 import logging
 
@@ -23,7 +24,7 @@ class NarrativeProfilerAgent(BaseAgent):
                 return AgentResult(success=False, error="No claims to analyze")
 
             # Try LLM-based analysis if available
-            from ..utils.llm import llm_manager
+            from utils.llm import llm_manager
             if llm_manager.is_available():
                 # Prepare context
                 claims_text = "\n".join([f"- {c}" for c in claims[:5]])  # limit claims
