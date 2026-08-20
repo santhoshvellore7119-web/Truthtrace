@@ -21,7 +21,7 @@ export default function Home() {
     setIsAnalyzing(true);
 
     try {
-      const response = await fetch('http://localhost:8000/analyze', {
+      const response = await fetch('http://localhost:8004/analyze', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
