@@ -1,6 +1,5 @@
 class DossierModel {
   final String id;
-
   final String inputClaim;
   final String language;
   final String overallVerdict;
@@ -8,6 +7,9 @@ class DossierModel {
   final OriginatingAccountModel? patientZero;
   final List<TimelineEventModel> timeline;
   final List<ClaimModel> claimsCorpus;
+  final List<ClaimClusterModel> clusters;
+  final AttributionReportModel? attribution;
+  final VideoForensicsModel? videoForensics;
   final List<SubClaimModel> subClaims;
   final NarrativeProfileModel? narrative;
   final RedTeamAuditModel? redTeamAudit;
@@ -22,6 +24,9 @@ class DossierModel {
     this.patientZero,
     this.timeline = const [],
     this.claimsCorpus = const [],
+    this.clusters = const [],
+    this.attribution,
+    this.videoForensics,
     this.subClaims = const [],
     this.narrative,
     this.redTeamAudit,
@@ -45,6 +50,12 @@ class DossierModel {
               ?.map((e) => ClaimModel.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
+      clusters: (json['clusters'] as List<dynamic>?)
+              ?.map((e) => ClaimClusterModel.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      attribution: json['attribution'] != null ? AttributionReportModel.fromJson(json['attribution']) : null,
+      videoForensics: json['video_forensics'] != null ? VideoForensicsModel.fromJson(json['video_forensics']) : null,
       subClaims: (json['sub_claims'] as List<dynamic>?)
               ?.map((e) => SubClaimModel.fromJson(e as Map<String, dynamic>))
               .toList() ??
@@ -52,6 +63,157 @@ class DossierModel {
       narrative: json['narrative'] != null ? NarrativeProfileModel.fromJson(json['narrative']) : null,
       redTeamAudit: json['red_team_audit'] != null ? RedTeamAuditModel.fromJson(json['red_team_audit']) : null,
       generatedAt: json['generated_at'] != null ? DateTime.tryParse(json['generated_at'] as String) : null,
+    );
+  }
+}
+
+class ClaimClusterModel {
+  final String clusterId;
+  final String label;
+  final int claimCount;
+  final DateTime? earliestTimestamp;
+  final String? patientZeroSource;
+  final List<ClaimModel> claims;
+
+  ClaimClusterModel({
+    required this.clusterId,
+    required this.label,
+    this.claimCount = 0,
+    this.earliestTimestamp,
+    this.patientZeroSource,
+    this.claims = const [],
+  });
+
+  factory ClaimClusterModel.fromJson(Map<String, dynamic> json) {
+    return ClaimClusterModel(
+      clusterId: json['cluster_id'] as String? ?? '',
+      label: json['label'] as String? ?? 'Cluster',
+      claimCount: json['claim_count'] as int? ?? 0,
+      earliestTimestamp: json['earliest_timestamp'] != null ? DateTime.tryParse(json['earliest_timestamp'] as String) : null,
+      patientZeroSource: json['patient_zero_source'] as String?,
+      claims: (json['claims'] as List<dynamic>?)?.map((e) => ClaimModel.fromJson(e as Map<String, dynamic>)).toList() ?? [],
+    );
+  }
+}
+
+class AttributionReportModel {
+  final List<DomainAttributionModel> domains;
+  final CoordinationSignalModel? coordination;
+  final String summary;
+
+  AttributionReportModel({
+    this.domains = const [],
+    this.coordination,
+    this.summary = '',
+  });
+
+  factory AttributionReportModel.fromJson(Map<String, dynamic> json) {
+    return AttributionReportModel(
+      domains: (json['domains'] as List<dynamic>?)
+              ?.map((e) => DomainAttributionModel.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      coordination: json['coordination'] != null ? CoordinationSignalModel.fromJson(json['coordination']) : null,
+      summary: json['summary'] as String? ?? '',
+    );
+  }
+}
+
+class DomainAttributionModel {
+  final String domain;
+  final DateTime? registrationDate;
+  final int? domainAgeDays;
+  final bool isFreshlyRegistered;
+  final String? mbfcRating;
+  final bool isIfcnSignatory;
+  final String credibilityTier;
+
+  DomainAttributionModel({
+    required this.domain,
+    this.registrationDate,
+    this.domainAgeDays,
+    this.isFreshlyRegistered = false,
+    this.mbfcRating,
+    this.isIfcnSignatory = false,
+    this.credibilityTier = 'unverified',
+  });
+
+  factory DomainAttributionModel.fromJson(Map<String, dynamic> json) {
+    return DomainAttributionModel(
+      domain: json['domain'] as String? ?? '',
+      registrationDate: json['registration_date'] != null ? DateTime.tryParse(json['registration_date'] as String) : null,
+      domainAgeDays: json['domain_age_days'] as int?,
+      isFreshlyRegistered: json['is_freshly_registered'] as bool? ?? false,
+      mbfcRating: json['mbfc_rating'] as String?,
+      isIfcnSignatory: json['is_ifcn_signatory'] as bool? ?? false,
+      credibilityTier: json['credibility_tier'] as String? ?? 'unverified',
+    );
+  }
+}
+
+class CoordinationSignalModel {
+  final bool detected;
+  final double coordinationScore;
+  final int accountCount;
+  final int timeWindowMinutes;
+  final String matchedPhrase;
+  final String details;
+
+  CoordinationSignalModel({
+    this.detected = false,
+    this.coordinationScore = 0.0,
+    this.accountCount = 0,
+    this.timeWindowMinutes = 0,
+    this.matchedPhrase = '',
+    this.details = '',
+  });
+
+  factory CoordinationSignalModel.fromJson(Map<String, dynamic> json) {
+    return CoordinationSignalModel(
+      detected: json['detected'] as bool? ?? false,
+      coordinationScore: (json['coordination_score'] as num?)?.toDouble() ?? 0.0,
+      accountCount: json['account_count'] as int? ?? 0,
+      timeWindowMinutes: json['time_window_minutes'] as int? ?? 0,
+      matchedPhrase: json['matched_phrase'] as String? ?? '',
+      details: json['details'] as String? ?? '',
+    );
+  }
+}
+
+class VideoForensicsModel {
+  final String? videoUrl;
+  final String? channelName;
+  final DateTime? publishedAt;
+  final int? viewCount;
+  final String? transcriptExcerpt;
+  final bool isRecycledFootage;
+  final double recyclingConfidence;
+  final List<String> keyframeMatches;
+  final String verdictNotes;
+
+  VideoForensicsModel({
+    this.videoUrl,
+    this.channelName,
+    this.publishedAt,
+    this.viewCount,
+    this.transcriptExcerpt,
+    this.isRecycledFootage = false,
+    this.recyclingConfidence = 0.0,
+    this.keyframeMatches = const [],
+    this.verdictNotes = '',
+  });
+
+  factory VideoForensicsModel.fromJson(Map<String, dynamic> json) {
+    return VideoForensicsModel(
+      videoUrl: json['video_url'] as String?,
+      channelName: json['channel_name'] as String?,
+      publishedAt: json['published_at'] != null ? DateTime.tryParse(json['published_at'] as String) : null,
+      viewCount: json['view_count'] as int?,
+      transcriptExcerpt: json['transcript_excerpt'] as String?,
+      isRecycledFootage: json['is_recycled_footage'] as bool? ?? false,
+      recyclingConfidence: (json['recycling_confidence'] as num?)?.toDouble() ?? 0.0,
+      keyframeMatches: (json['keyframe_matches'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      verdictNotes: json['verdict_notes'] as String? ?? '',
     );
   }
 }

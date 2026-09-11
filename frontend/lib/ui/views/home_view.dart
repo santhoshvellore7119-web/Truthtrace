@@ -125,7 +125,7 @@ class _HomeViewState extends State<HomeView> {
         builder: (context, _) {
           return Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 860),
+              constraints: const BoxConstraints(maxWidth: 900),
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
                 children: [
@@ -165,7 +165,7 @@ class _HomeViewState extends State<HomeView> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Enter any viral statement, headline, or URL to trace origins and verify evidence.',
+              'Perform multi-agent forensic OSINT, social ingestion, WHOIS attribution, and patient-zero tracing.',
               style: TextStyle(fontSize: 13, color: Theme.of(context).textTheme.bodySmall?.color),
             ),
             const SizedBox(height: 16),
@@ -173,8 +173,8 @@ class _HomeViewState extends State<HomeView> {
               controller: _viewModel.claimController,
               maxLines: 3,
               decoration: InputDecoration(
-                labelText: 'Claim / Assertion',
-                hintText: 'e.g. Drinking salt water cures biological aging...',
+                labelText: 'Claim / Headline / Social Post',
+                hintText: 'Enter a statement to trace origins...',
                 alignLabelWithHint: true,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 filled: true,
@@ -184,8 +184,8 @@ class _HomeViewState extends State<HomeView> {
             TextField(
               controller: _viewModel.urlController,
               decoration: InputDecoration(
-                labelText: 'Or Article / Post URL',
-                hintText: 'https://example.com/news-article',
+                labelText: 'Or Target Article / Video URL',
+                hintText: 'https://youtube.com/watch?v=... or https://news.com/...',
                 prefixIcon: const Icon(Icons.link, size: 20),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 filled: true,
@@ -194,17 +194,18 @@ class _HomeViewState extends State<HomeView> {
             const SizedBox(height: 14),
             Wrap(
               spacing: 8,
-              runSpacing: 4,
+              runSpacing: 6,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                const Text('Try samples:', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                for (int i = 0; i < _viewModel.sampleClaims.length; i++)
+                const Text('Worked Cases:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
+                for (final ex in _viewModel.workedExamples)
                   ActionChip(
+                    avatar: const Icon(Icons.bolt, size: 14, color: Colors.amber),
                     label: Text(
-                      'Sample ${i + 1}',
+                      ex.title,
                       style: const TextStyle(fontSize: 11),
                     ),
-                    onPressed: () => _viewModel.selectSample(_viewModel.sampleClaims[i]),
+                    onPressed: () => _viewModel.selectWorkedExample(ex),
                   ),
               ],
             ),
@@ -222,7 +223,7 @@ class _HomeViewState extends State<HomeView> {
                       )
                     : const Icon(Icons.radar),
                 label: Text(
-                  _viewModel.isLoading ? 'Forensic Agents Investigating...' : 'Analyze Claim',
+                  _viewModel.isLoading ? 'Forensic Pipeline Running...' : 'Trace Patient Zero',
                   style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                 ),
               ),
@@ -266,7 +267,7 @@ class _HomeViewState extends State<HomeView> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             const Text(
-              'Forensic Dossier',
+              'Forensic Intelligence Dossier',
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
             IconButton.filledTonal(
@@ -352,7 +353,7 @@ class _HomeViewState extends State<HomeView> {
                     children: [
                       Text('🎯 ', style: TextStyle(fontSize: 18)),
                       Text(
-                        'Patient Zero Candidate',
+                        'Patient Zero Origin Candidate',
                         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                       ),
                     ],
@@ -364,17 +365,202 @@ class _HomeViewState extends State<HomeView> {
                         child: _buildMetaColumn('Platform', dossier.patientZero!.platform),
                       ),
                       Expanded(
-                        child: _buildMetaColumn('Handle / Domain', '@${dossier.patientZero!.handle}'),
+                        child: _buildMetaColumn('Source Handle / Domain', '@${dossier.patientZero!.handle}'),
                       ),
                       Expanded(
                         child: _buildMetaColumn(
                           'First Indexed',
                           dossier.patientZero!.firstSeenAt != null
-                              ? DateFormat('yyyy-MM-dd').format(dossier.patientZero!.firstSeenAt!)
-                              : 'Earliest',
+                              ? DateFormat('yyyy-MM-dd HH:mm').format(dossier.patientZero!.firstSeenAt!)
+                              : 'Earliest Discovered',
                         ),
                       ),
                     ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+
+        // Semantic Claim Clusters (Phase 2)
+        if (dossier.clusters.isNotEmpty) ...[
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              const Icon(Icons.hub_outlined, size: 20, color: Colors.indigoAccent),
+              const SizedBox(width: 8),
+              Text(
+                'Semantic Claim Clusters (${dossier.clusters.length})',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          for (final cluster in dossier.clusters)
+            Card(
+              elevation: 0,
+              margin: const EdgeInsets.only(bottom: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            cluster.label,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.indigo.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${cluster.claimCount} Variants',
+                            style: const TextStyle(fontSize: 11, color: Colors.indigo, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (cluster.patientZeroSource != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Earliest Origin: ${cluster.patientZeroSource}',
+                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+        ],
+
+        // Organization Attribution & Coordination (Phase 4)
+        if (dossier.attribution != null) ...[
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              const Icon(Icons.corporate_fare_outlined, size: 20, color: Colors.teal),
+              const SizedBox(width: 8),
+              const Text(
+                'Domain Attribution & Coordination',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (dossier.attribution!.summary.isNotEmpty) ...[
+                    Text(
+                      dossier.attribution!.summary,
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                    ),
+                    const Divider(height: 24),
+                  ],
+                  for (final d in dossier.attribution!.domains)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                d.isIfcnSignatory ? Icons.verified : Icons.language,
+                                size: 16,
+                                color: d.isIfcnSignatory ? Colors.blueAccent : Colors.grey,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(d.domain, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                            ],
+                          ),
+                          Text(
+                            d.mbfcRating ?? (d.isFreshlyRegistered ? '🚩 Fresh Domain' : 'Established'),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: d.isFreshlyRegistered ? Colors.red : Colors.grey.shade700,
+                              fontWeight: d.isFreshlyRegistered ? FontWeight.bold : FontWeight.normal,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+
+        // Video Forensics (Phase 5)
+        if (dossier.videoForensics != null && dossier.videoForensics!.videoUrl != null) ...[
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              const Icon(Icons.videocam_outlined, size: 20, color: Colors.deepOrangeAccent),
+              const SizedBox(width: 8),
+              const Text(
+                'Video Forensics & Keyframe Analysis',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        dossier.videoForensics!.channelName ?? 'Video Source',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      if (dossier.videoForensics!.isRecycledFootage)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            '⚠️ RECYCLED FOOTAGE',
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.red),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    dossier.videoForensics!.verdictNotes,
+                    style: const TextStyle(fontSize: 13),
                   ),
                 ],
               ),

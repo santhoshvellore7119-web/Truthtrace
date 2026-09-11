@@ -1,6 +1,6 @@
 """
 Vector storage and semantic clustering abstraction for TruthTrace.
-Supports Chroma, in-memory vector storage, and semantic clustering of Claim objects.
+Supports Chroma, in-memory vector storage, and semantic clustering of Claim objects into ClaimCluster objects.
 """
 import os
 import math
@@ -8,7 +8,7 @@ import logging
 import re
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
-from models.schemas import Claim
+from models.schemas import Claim, ClaimCluster
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ def get_embedding_model():
     return _EMBEDDING_MODEL
 
 def compute_embedding(text: str) -> List[float]:
-    """Compute vector embedding for a given text string."""
+    """Compute dense vector embedding for a given text string."""
     model = get_embedding_model()
     if model != "fallback" and model is not None:
         try:
@@ -48,7 +48,7 @@ def compute_embedding(text: str) -> List[float]:
     # Word unigrams
     for token in tokens:
         idx = hash(token) % dim
-        vec[idx] += 2.0
+        vec[idx] += 3.0
 
     # Character trigrams for sub-word similarity
     clean_text = " " + " ".join(tokens) + " "
@@ -124,7 +124,7 @@ class VectorStore:
         """Add multiple Claim objects."""
         return [self.add_claim(c) for c in claims]
 
-    def similarity_search(self, query: str, top_k: int = 5, threshold: float = 0.25) -> List[Tuple[Claim, float]]:
+    def similarity_search(self, query: str, top_k: int = 5, threshold: float = 0.20) -> List[Tuple[Claim, float]]:
         """Search claims similar to query text above a similarity threshold."""
         query_emb = compute_embedding(query)
         scored = []
@@ -136,21 +136,21 @@ class VectorStore:
         scored.sort(key=lambda x: x[1], reverse=True)
         return scored[:top_k]
 
-    def cluster_claims(self, similarity_threshold: float = 0.3) -> Dict[str, List[Claim]]:
+    def cluster_claims(self, similarity_threshold: float = 0.20) -> List[ClaimCluster]:
         """
-        Cluster near-duplicate/paraphrased claims using connected components or single-linkage.
-        Assigns cluster_id to each claim and returns {cluster_id: [claims]}.
+        Cluster near-duplicate and paraphrased claims into ClaimCluster objects.
+        Surfaces the earliest timestamp and patient zero candidate inside each cluster.
         """
         all_claims = list(self.claims.values())
         if not all_claims:
-            return {}
+            return []
 
         # Ensure embeddings
         for c in all_claims:
             if not c.embedding:
                 c.embedding = compute_embedding(c.text)
 
-        # Adjacency graph for connected components
+        # Build adjacency graph
         n = len(all_claims)
         adj: Dict[int, List[int]] = {i: [] for i in range(n)}
         for i in range(n):
@@ -161,14 +161,20 @@ class VectorStore:
                     adj[j].append(i)
 
         visited = set()
-        clusters: Dict[str, List[Claim]] = {}
+        cluster_list: List[ClaimCluster] = []
         cluster_idx = 0
+
+        def _sort_ts(c: Claim):
+            ts = c.timestamp
+            if ts and ts.tzinfo:
+                ts = ts.replace(tzinfo=None)
+            return ts or datetime.max
 
         for i in range(n):
             if i not in visited:
                 cluster_id = f"cluster_{cluster_idx}"
                 cluster_idx += 1
-                group = []
+                group: List[Claim] = []
                 queue = [i]
                 visited.add(i)
                 while queue:
@@ -182,10 +188,25 @@ class VectorStore:
                             queue.append(neighbor)
                 
                 # Sort claims in the cluster by timestamp ascending (earliest first)
-                group.sort(key=lambda c: c.timestamp or datetime.max)
-                clusters[cluster_id] = group
+                group.sort(key=_sort_ts)
+                
+                earliest_ts = group[0].timestamp if group and _sort_ts(group[0]) != datetime.max else None
+                patient_zero_source = (
+                    group[0].source_url or group[0].source_platform or group[0].text[:30]
+                ) if group else None
 
-        return clusters
+                cluster_label = f"Narrative: {group[0].text[:45]}..." if group else f"Cluster {cluster_id}"
+
+                cluster_list.append(ClaimCluster(
+                    cluster_id=cluster_id,
+                    label=cluster_label,
+                    claim_count=len(group),
+                    earliest_timestamp=earliest_ts,
+                    patient_zero_source=patient_zero_source,
+                    claims=group
+                ))
+
+        return cluster_list
 
 # Global singleton
 vector_store = VectorStore()
