@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 from agents.claim_extractor import ClaimExtractorAgent
 from agents.osint_hunter import OSINTHunterAgent
+from agents.wayback_agent import WaybackAgent
 from agents.fact_checker import FactCheckAgent
 from agents.narrative_profiler import NarrativeProfilerAgent
 from agents.red_team_auditor import RedTeamAuditorAgent
@@ -17,7 +18,7 @@ from agents.video_analyst import VideoAnalystAgent
 from agents.synthesizer import SynthesizerAgent
 from models.schemas import Dossier
 
-app = FastAPI(title="TruthTrace API", version="0.2.0")
+app = FastAPI(title="TruthTrace API", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -33,7 +34,7 @@ class AnalyzeRequest(BaseModel):
 @app.post("/analyze", response_model=Dossier)
 async def analyze_claim(request: AnalyzeRequest):
     """
-    Analyze a claim or URL using the multi-agent pipeline with forensic video analysis.
+    Analyze a claim or URL using the multi-agent pipeline with forensic OSINT and chronological timeline.
     """
     if not request.claim and not request.url:
         raise HTTPException(status_code=400, detail="Either claim or url must be provided")
@@ -41,6 +42,7 @@ async def analyze_claim(request: AnalyzeRequest):
     # Initialize agents
     claim_extractor = ClaimExtractorAgent()
     osint_hunter = OSINTHunterAgent()
+    wayback_agent = WaybackAgent()
     fact_checker = FactCheckAgent()
     narrative_profiler = NarrativeProfilerAgent()
     red_team_auditor = RedTeamAuditorAgent()
@@ -62,18 +64,25 @@ async def analyze_claim(request: AnalyzeRequest):
     if not claims_data or 'claims' not in claims_data:
         raise HTTPException(status_code=500, detail="No claims extracted")
 
-    # Step 2: Hunt for provenance
+    # Step 2: Hunt for provenance across GDELT, NewsAPI, and Fact Checks in parallel
     osint_result = await osint_hunter.execute(claims_data)
     if not osint_result.success:
-        # Continue with empty provenance rather than failing
-        osint_data = {'provenance': []}
+        osint_data = {'provenance': [], 'raw_sources': {}}
     else:
         osint_data = osint_result.data
 
-    # Step 3: Fact check
+    provenance_list = osint_data.get('provenance', [])
+
+    # Step 2.5: Query Wayback CDX API for earliest historical archive timestamps
+    discovered_urls = [p.get('url') for p in provenance_list if p.get('url')]
+    wayback_result = await wayback_agent.execute({'urls': discovered_urls, 'provenance': provenance_list})
+    wayback_snapshots = wayback_result.data.get('snapshots', {}) if wayback_result.success else {}
+
+    # Step 3: Fact check aggregation & verification
     fact_check_input = {
         'claims': claims_data.get('claims', []),
-        'provenance': osint_data.get('provenance', [])
+        'provenance': provenance_list,
+        'raw_sources': osint_data.get('raw_sources', {})
     }
     fact_check_result = await fact_checker.execute(fact_check_input)
     if not fact_check_result.success:
@@ -94,26 +103,21 @@ async def analyze_claim(request: AnalyzeRequest):
 
     # Step 4.5: Red-Team Auditing
     red_team_audit_input = {
-        'provenance': osint_data.get('provenance', []),
+        'provenance': provenance_list,
         'fact_check_results': fact_check_data.get('fact_check_results', []),
         'narrative_analysis': narrative_data.get('narrative_analysis', {})
     }
     red_team_audit_result = await red_team_auditor.execute(red_team_audit_input)
     if not red_team_audit_result.success:
-        # Continue with empty audit rather than failing
         red_team_audit_data = {'red_team_audit': {}}
     else:
         red_team_audit_data = red_team_audit_result.data
 
-    # Step 5: Video Forensic Analysis (NEW)
-    # Only run video analysis if we have claims that might benefit from video content
+    # Step 5: Video Forensic Analysis
     video_analysis_data = {'video_analysis': []}
     try:
-        # In a full implementation, we might intelligently decide when to run video analysis
-        # For now, we'll run it on all analyses to demonstrate the capability
         video_input = {
             'claims': claims_data.get('claims', []),
-            # We could also pass specific video URLs if we had them from OSINT hunting
         }
         video_result = await video_analyst.execute(video_input)
         if video_result.success:
@@ -125,10 +129,11 @@ async def analyze_claim(request: AnalyzeRequest):
         logger.warning(f"Video analysis error: {e}")
         video_analysis_data = {'video_analysis': []}
 
-    # Step 6: Synthesize results
+    # Step 6: Synthesize results into forensic dossier with ascending timeline & patient-zero
     synthesizer_input = {
         'claims': claims_data.get('claims', []),
-        'provenance': osint_data.get('provenance', []),
+        'provenance': provenance_list,
+        'wayback_snapshots': wayback_snapshots,
         'fact_check_results': fact_check_data.get('fact_check_results', []),
         'narrative_analysis': narrative_data.get('narrative_analysis', {}),
         'red_team_audit': red_team_audit_data.get('red_team_audit', {}),
