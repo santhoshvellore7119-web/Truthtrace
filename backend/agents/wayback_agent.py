@@ -20,7 +20,7 @@ class WaybackAgent(BaseAgent):
     def __init__(self):
         super().__init__("WaybackAgent")
         self.cdx_api_url = os.getenv("WAYBACK_CDX_API_URL", "http://web.archive.org/cdx/search/cdx")
-        self.timeout = float(os.getenv("TRUTHTRACE_CDX_TIMEOUT", "10.0"))
+        self.timeout = float(os.getenv("TRUTHTRACE_CDX_TIMEOUT", "4.0"))
 
     async def execute(self, input_data: Dict[str, Any]) -> AgentResult:
         """
@@ -39,14 +39,15 @@ class WaybackAgent(BaseAgent):
                         if prov.get('earliest_mention', {}).get('url'):
                             urls.append(prov['earliest_mention']['url'])
             
-            # Deduplicate URLs
-            unique_urls = list(set([u for u in urls if u and isinstance(u, str) and u.startswith("http")]))
+            # Deduplicate URLs and cap at 5
+            unique_urls = list(dict.fromkeys([u for u in urls if u and isinstance(u, str) and u.startswith("http")]))[:5]
             if not unique_urls:
                 return AgentResult(success=True, data={'snapshots': {}})
 
-            # Run parallel lookups with rate limiting (max 5 concurrent requests)
+            # Run parallel lookups with rate limiting
             semaphore = asyncio.Semaphore(5)
-            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
+            headers = {"User-Agent": "TruthTraceOSINTBot/1.0"}
+            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True, headers=headers) as client:
                 tasks = [self._fetch_earliest_snapshot(client, semaphore, url) for url in unique_urls]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 

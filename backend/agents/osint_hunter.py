@@ -11,19 +11,68 @@ import httpx
 import logging
 import os
 import urllib.parse
+from html.parser import HTMLParser
 
 logger = logging.getLogger(__name__)
 
+class DDGLiteParser(HTMLParser):
+    """HTML parser to extract real search results from DuckDuckGo Lite."""
+    def __init__(self):
+        super().__init__()
+        self.in_result_link = False
+        self.in_snippet = False
+        self.current_href = None
+        self.current_title = ""
+        self.current_snippet = ""
+        self.results = []
+
+    def handle_starttag(self, tag, attrs):
+        attr_dict = dict(attrs)
+        if tag == "a" and "result-link" in attr_dict.get("class", ""):
+            self.in_result_link = True
+            self.current_href = attr_dict.get("href", "")
+            self.current_title = ""
+        elif tag == "td" and "result-snippet" in attr_dict.get("class", ""):
+            self.in_snippet = True
+            self.current_snippet = ""
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self.in_result_link:
+            self.in_result_link = False
+        elif tag == "td" and self.in_snippet:
+            self.in_snippet = False
+            if self.results and self.current_snippet:
+                self.results[-1]["snippet"] = self.current_snippet.strip()
+
+    def handle_data(self, data):
+        if self.in_result_link:
+            self.current_title += data
+            if self.current_href and not any(r.get("url") == self.current_href for r in self.results):
+                actual_url = self.current_href
+                if "uddg=" in actual_url:
+                    try:
+                        actual_url = urllib.parse.unquote(actual_url.split("uddg=")[1].split("&")[0])
+                    except Exception:
+                        pass
+                self.results.append({
+                    "title": self.current_title.strip(),
+                    "url": actual_url,
+                    "snippet": ""
+                })
+        elif self.in_snippet:
+            self.current_snippet += data
+
+
 class OSINTHunterAgent(BaseAgent):
     """
-    Hunts for provenance across GDELT, NewsAPI, and Google Fact Check API in parallel.
+    Hunts for provenance across GDELT, DuckDuckGo Lite, Wikipedia, NewsAPI, and Google Fact Check API in parallel.
     """
     def __init__(self):
         super().__init__("OSINTHunter")
         self.gdelt_url = os.getenv("GDELT_API_URL", "https://api.gdeltproject.org/api/v2/doc/doc")
         self.news_api_key = os.getenv("NEWS_API_KEY")
         self.fact_check_api_key = os.getenv("GOOGLE_FACT_CHECK_API_KEY")
-        self.timeout = float(os.getenv("TRUTHTRACE_OSINT_TIMEOUT", "12.0"))
+        self.timeout = float(os.getenv("TRUTHTRACE_OSINT_TIMEOUT", "4.0"))
 
     async def execute(self, input_data: Dict[str, Any]) -> AgentResult:
         """
@@ -40,28 +89,39 @@ class OSINTHunterAgent(BaseAgent):
 
             all_provenance = []
             raw_sources = {
+                "web_search": [],
+                "wikipedia": [],
                 "gdelt": [],
                 "news_api": [],
-                "fact_check": [],
-                "simulated": []
+                "fact_check": []
             }
 
-            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Accept-Language": "en-US,en;q=0.9"
+            }
+
+            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True, headers=headers) as client:
                 for idx, claim in enumerate(claims):
-                    # Query GDELT, NewsAPI, and Google Fact Check in parallel for each claim
+                    # Query DDG Lite, Wikipedia, GDELT, NewsAPI, and Google Fact Check in parallel
                     tasks = [
+                        self._query_web_search(client, claim),
+                        self._query_wikipedia(client, claim),
                         self._query_gdelt(client, claim),
                         self._query_newsapi(client, claim),
                         self._query_google_fact_check(client, claim)
                     ]
                     
-                    gdelt_results, news_results, fact_check_results = await asyncio.gather(*tasks, return_exceptions=True)
+                    web_results, wiki_results, gdelt_results, news_results, fact_check_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                    # Safeguard against exceptions in gather
+                    web_items = web_results if isinstance(web_results, list) else []
+                    wiki_items = wiki_results if isinstance(wiki_results, list) else []
                     gdelt_items = gdelt_results if isinstance(gdelt_results, list) else []
                     news_items = news_results if isinstance(news_results, list) else []
                     fc_items = fact_check_results if isinstance(fact_check_results, list) else []
 
+                    raw_sources["web_search"].extend(web_items)
+                    raw_sources["wikipedia"].extend(wiki_items)
                     raw_sources["gdelt"].extend(gdelt_items)
                     raw_sources["news_api"].extend(news_items)
                     raw_sources["fact_check"].extend(fc_items)
@@ -69,6 +129,45 @@ class OSINTHunterAgent(BaseAgent):
                     # Build unified provenance records for each discovered item
                     claim_prov = []
                     
+                    # 1. Real Web search items
+                    for item in web_items:
+                        domain = urllib.parse.urlparse(item.get("url", "")).netloc.lower()
+                        # Tier determination
+                        tier = "unverified"
+                        if any(d in domain for d in ["newschecker.in", "boomlive.in", "altnews.in", "factly.in", "factcrescendo.com", "snopes.com", "politifact.com", "reuters.com", "apnews.com"]):
+                            tier = "registry"
+                        elif any(d in domain for d in ["thehindu.com", "frontline.thehindu.com", "indianexpress.com", "bbc.com", "ndtv.com", "indiatoday.in"]):
+                            tier = "mainstream"
+
+                        claim_prov.append({
+                            "claim": claim,
+                            "source_type": "web_search",
+                            "platform": f"Web: {domain}",
+                            "title": item.get("title"),
+                            "url": item.get("url"),
+                            "domain": domain,
+                            "timestamp": datetime.now().isoformat(),
+                            "language": "en",
+                            "credibility_tier": tier,
+                            "raw_metadata": item
+                        })
+
+                    # 2. Wikipedia knowledge items
+                    for item in wiki_items:
+                        claim_prov.append({
+                            "claim": claim,
+                            "source_type": "wikipedia",
+                            "platform": "Wikipedia Reference",
+                            "title": item.get("title"),
+                            "url": item.get("url"),
+                            "domain": "en.wikipedia.org",
+                            "timestamp": datetime.now().isoformat(),
+                            "language": "en",
+                            "credibility_tier": "mainstream",
+                            "raw_metadata": item
+                        })
+
+                    # 3. GDELT Global news
                     for item in gdelt_items:
                         claim_prov.append({
                             "claim": claim,
@@ -79,10 +178,11 @@ class OSINTHunterAgent(BaseAgent):
                             "domain": item.get("domain"),
                             "timestamp": item.get("timestamp"),
                             "language": item.get("language", "en"),
-                            "credibility_tier": "mainstream" if item.get("domain") in ["reuters.com", "apnews.com", "bbc.com", "nytimes.com"] else "unverified",
+                            "credibility_tier": "mainstream" if item.get("domain") in ["reuters.com", "apnews.com", "bbc.com", "thehindu.com"] else "unverified",
                             "raw_metadata": item
                         })
 
+                    # 4. NewsAPI items
                     for item in news_items:
                         claim_prov.append({
                             "claim": claim,
@@ -97,6 +197,7 @@ class OSINTHunterAgent(BaseAgent):
                             "raw_metadata": item
                         })
 
+                    # 5. Fact Check items
                     for item in fc_items:
                         claim_prov.append({
                             "claim": claim,
@@ -111,12 +212,6 @@ class OSINTHunterAgent(BaseAgent):
                             "raw_metadata": item
                         })
 
-                    # If no live results returned (e.g. no keys or test environment), provide structured fallback
-                    if not claim_prov:
-                        fallback_items = self._generate_fallback_provenance(claim, idx)
-                        claim_prov.extend(fallback_items)
-                        raw_sources["simulated"].extend(fallback_items)
-
                     all_provenance.extend(claim_prov)
 
             return AgentResult(
@@ -130,6 +225,55 @@ class OSINTHunterAgent(BaseAgent):
         except Exception as e:
             logger.error(f"OSINT Hunter agent error: {e}")
             return AgentResult(success=False, error=str(e))
+
+    async def _query_web_search(self, client: httpx.AsyncClient, query: str) -> List[Dict[str, Any]]:
+        """Query DuckDuckGo Lite for keyless real-time web search results."""
+        results = []
+        try:
+            ddg_url = "https://lite.duckduckgo.com/lite/"
+            # Clean query
+            clean_q = query[:120].strip()
+            resp = await client.post(ddg_url, data={"q": clean_q})
+            if resp.status_code == 200:
+                parser = DDGLiteParser()
+                parser.feed(resp.text)
+                for res in parser.results[:8]:
+                    if res.get("url") and res.get("title"):
+                        results.append({
+                            "title": res["title"],
+                            "url": res["url"],
+                            "description": res.get("snippet", "")
+                        })
+        except Exception as e:
+            logger.debug(f"Web search error: {e}")
+        return results
+
+    async def _query_wikipedia(self, client: httpx.AsyncClient, query: str) -> List[Dict[str, Any]]:
+        """Query Wikipedia OpenSearch API for relevant background entity knowledge."""
+        results = []
+        try:
+            tokens = [w for w in query.split() if len(w) > 3 and not w.lower().startswith("http")][:4]
+            search_terms = " ".join(tokens)
+            if not search_terms:
+                return results
+
+            wiki_url = f"https://en.wikipedia.org/w/api.php?action=opensearch&search={urllib.parse.quote(search_terms)}&limit=3&namespace=0&format=json"
+            resp = await client.get(wiki_url)
+            if resp.status_code == 200:
+                data = resp.json()
+                if len(data) >= 4:
+                    titles = data[1]
+                    snippets = data[2] if len(data) > 2 else []
+                    urls = data[3]
+                    for i in range(len(titles)):
+                        results.append({
+                            "title": titles[i],
+                            "description": snippets[i] if i < len(snippets) else "",
+                            "url": urls[i] if i < len(urls) else ""
+                        })
+        except Exception as e:
+            logger.debug(f"Wikipedia lookup error: {e}")
+        return results
 
     async def _query_gdelt(self, client: httpx.AsyncClient, query: str) -> List[Dict[str, Any]]:
         """Query GDELT 2.0 Doc API for earliest news mentions."""
@@ -236,31 +380,3 @@ class OSINTHunterAgent(BaseAgent):
         except Exception as e:
             logger.debug(f"Google Fact Check API error: {e}")
         return results
-
-    def _generate_fallback_provenance(self, claim: str, index: int) -> List[Dict[str, Any]]:
-        """Provide realistic mock provenance for development and offline testing."""
-        base_time = datetime.now()
-        return [
-            {
-                "claim": claim,
-                "source_type": "simulated_news",
-                "platform": "Reuters Global News",
-                "title": f"Fact Check: Analysis of claim '{claim[:40]}...'",
-                "url": f"https://www.reuters.com/fact-check/investigation-claim-{index}",
-                "domain": "reuters.com",
-                "timestamp": (base_time).isoformat(),
-                "language": "en",
-                "credibility_tier": "mainstream"
-            },
-            {
-                "claim": claim,
-                "source_type": "simulated_social",
-                "platform": "Reddit",
-                "title": f"Viral discussion on '{claim[:35]}'",
-                "url": f"https://www.reddit.com/r/conspiracy/comments/viral_{index}",
-                "domain": "reddit.com",
-                "timestamp": (base_time).isoformat(),
-                "language": "en",
-                "credibility_tier": "unverified"
-            }
-        ]

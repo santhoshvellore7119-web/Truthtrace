@@ -37,15 +37,29 @@ class FactCheckAgent(BaseAgent):
 
             async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
                 for claim in claims:
-                    # 1. Check if provenance already contains Google Fact Check records
+                    # 1. Check if provenance contains Google Fact Check or verified fact check domains
                     existing_fc_items = [
                         p for p in provenance 
                         if p.get('source_type') == 'google_fact_check' and p.get('claim') == claim
                     ]
 
+                    # Also extract any web search results from recognized fact-checking registries
+                    fact_check_domains = [
+                        "newschecker.in", "boomlive.in", "altnews.in", "factly.in", 
+                        "factcrescendo.com", "snopes.com", "politifact.com", "reuters.com", 
+                        "apnews.com", "cyberpeace.org", "vishvasnews.com", "thequint.com"
+                    ]
+                    for p in provenance:
+                        domain = (p.get('domain') or '').lower()
+                        title = (p.get('title') or '').lower()
+                        if any(fcd in domain for fcd in fact_check_domains) or "fact check" in title or "is fake" in title or "fabricated" in title:
+                            if p not in existing_fc_items:
+                                existing_fc_items.append(p)
+
                     # 2. If none present and API key is configured, query directly
                     if not existing_fc_items and self.fact_check_api_key and not self.fact_check_api_key.startswith("your_"):
-                        existing_fc_items = await self._query_google_fact_check(client, claim)
+                        direct_fc = await self._query_google_fact_check(client, claim)
+                        existing_fc_items.extend(direct_fc)
 
                     # 3. Derive verdict and confidence from available fact-checks
                     if existing_fc_items:
@@ -53,26 +67,31 @@ class FactCheckAgent(BaseAgent):
                         ratings = []
                         for item in existing_fc_items:
                             meta = item.get('raw_metadata', item)
-                            rating = meta.get('rating', '')
-                            ratings.append(rating.lower())
+                            rating = meta.get('rating') or ''
+                            title = (item.get('title') or '').lower()
+                            
+                            # If no textualRating field was present, extract from title
+                            if not rating:
+                                if any(w in title for w in ["is fake", "fake", "fabricated", "false", "hoax", "morphed", "edited", "debunked"]):
+                                    rating = "False / Fabricated"
+                                elif any(w in title for w in ["true", "confirmed", "correct", "authentic"]):
+                                    rating = "True"
+                                elif any(w in title for w in ["misleading", "missing context", "out of context"]):
+                                    rating = "Misleading"
+
+                            if rating:
+                                ratings.append(rating.lower())
+
                             sources.append({
-                                'name': meta.get('publisher') or meta.get('publisher_site') or 'Fact Check Registry',
+                                'name': meta.get('publisher') or item.get('platform') or meta.get('publisher_site') or item.get('domain') or 'Fact Check Registry',
                                 'url': item.get('url') or meta.get('url', ''),
-                                'rating': rating,
+                                'rating': rating or 'Analyzed Source',
                                 'review_date': meta.get('timestamp') or meta.get('review_date')
                             })
 
                         verdict, confidence = self._normalize_verdict(ratings)
                     else:
-                        # Fallback heuristic analysis if no direct registry match found
-                        sources = [
-                            {
-                                'name': 'FactCheck Aggregator (Unregistered)',
-                                'url': 'https://toolbox.google.com/factcheck/explorer',
-                                'rating': 'Unverified Claim',
-                                'review_date': None
-                            }
-                        ]
+                        sources = []
                         verdict = "unverified"
                         confidence = 0.50
 
@@ -129,9 +148,9 @@ class FactCheckAgent(BaseAgent):
 
         for r in ratings:
             r_lower = r.lower()
-            if any(w in r_lower for w in ["false", "pants on fire", "incorrect", "fake", "fabricated", "hoax"]):
+            if any(w in r_lower for w in ["false", "pants on fire", "incorrect", "fake", "fabricated", "hoax", "morphed", "edited", "debunked"]):
                 false_count += 1
-            elif any(w in r_lower for w in ["true", "correct", "accurate"]):
+            elif any(w in r_lower for w in ["true", "correct", "accurate", "confirmed", "authentic"]):
                 true_count += 1
             elif any(w in r_lower for w in ["satire", "parody", "joke"]):
                 satire_count += 1
@@ -143,12 +162,12 @@ class FactCheckAgent(BaseAgent):
             return "unverified", 0.50
 
         if false_count > true_count and false_count >= misleading_count:
-            return "false", min(0.95, 0.70 + (false_count / total) * 0.25)
+            return "false", min(0.95, 0.75 + (false_count / total) * 0.20)
         elif misleading_count > 0:
             return "misleading", min(0.90, 0.65 + (misleading_count / total) * 0.25)
         elif satire_count > 0:
             return "satire", 0.85
         elif true_count > false_count:
-            return "true", min(0.95, 0.70 + (true_count / total) * 0.25)
+            return "true", min(0.95, 0.75 + (true_count / total) * 0.20)
         else:
             return "misleading", 0.70

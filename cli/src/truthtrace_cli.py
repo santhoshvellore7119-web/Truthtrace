@@ -69,95 +69,112 @@ def check(
         console.print(f"\n[green]Results saved to {output}[/green]")
 
 def display_results(result: dict):
-    """Display analysis results in a formatted way."""
+    """Display analysis results in a formatted way matching the Dossier schema."""
 
     # Verdict panel
     verdict_colors = {
+        "TRUE": "green",
         "CONFIRMED": "green",
         "MOSTLY TRUE": "green",
         "MISLEADING": "yellow",
         "OUT OF CONTEXT": "yellow",
+        "FALSE": "red",
         "FABRICATED": "red",
-        "SATIRE": "blue"
+        "SATIRE": "blue",
+        "UNVERIFIED": "magenta"
     }
-    verdict_color = verdict_colors.get(result.get("verdict", "").upper(), "white")
+    raw_verdict = result.get("overall_verdict") or result.get("verdict") or "UNVERIFIED"
+    verdict_str = raw_verdict.upper()
+    verdict_color = verdict_colors.get(verdict_str, "white")
+
+    raw_conf = result.get("overall_confidence")
+    if raw_conf is None:
+        raw_conf = result.get("credibility_score", 0.5)
+        if raw_conf > 1.0:
+            raw_conf = raw_conf / 100.0
+    conf_pct = int(float(raw_conf) * 100)
 
     verdict_panel = Panel(
-        f"[{verdict_color}]{result.get('verdict', 'N/A')}[/{verdict_color}]\n"
-        f"Credibility Score: {result.get('credibility_score', 0)}%",
-        title="Analysis Verdict",
+        f"[bold {verdict_color}]{verdict_str}[/bold {verdict_color}]\n"
+        f"Forensic Confidence: {conf_pct}%\n"
+        f"Analyzed Claim: [italic]{result.get('input_claim', 'N/A')}[/italic]",
+        title="Forensic Verdict & Credibility Assessment",
         border_style=verdict_color
     )
     console.print(verdict_panel)
 
-    # Timeline
-    if result.get("timeline"):
-        timeline_table = Table(title="Timeline & Provenance")
-        timeline_table.add_column("Timestamp", style="cyan")
-        timeline_table.add_column("Event", style="magenta")
-
-        for event in result["timeline"]:
-            timeline_table.add_row(
-                event.get("timestamp", ""),
-                event.get("event", "")
-            )
-        console.print(timeline_table)
-
-    # Patient Zero
+    # Patient Zero & Earliest Origin
     if result.get("patient_zero"):
         pz = result["patient_zero"]
         pz_panel = Panel(
-            f"Entity: {pz.get('entity', 'N/A')}\n"
-            f"Handle: {pz.get('handle', 'N/A')}\n"
             f"Platform: {pz.get('platform', 'N/A')}\n"
-            f"Account Created: {pz.get('account_created', 'N/A')}\n"
-            f"Bio: {pz.get('bio', 'N/A')}\n"
-            f"Network Affiliations: {', '.join(pz.get('network_affiliations', []))}",
-            title="Patient Zero & Origin Profile",
-            border_style="blue"
+            f"Originating Handle / Domain: [bold cyan]{pz.get('handle', 'N/A')}[/bold cyan]\n"
+            f"First Discovered At: {pz.get('first_seen_at', 'N/A')}\n"
+            f"Prior Flagged Claims: {pz.get('prior_flagged_claims', 0)}",
+            title="Candidate Patient Zero & Origin Profile",
+            border_style="cyan"
         )
         console.print(pz_panel)
 
-    # Source Tweaking
-    if result.get("source_tweaking"):
-        st = result["source_tweaking"]
-        tweak_panel = Panel(
-            f"[green]Original Statement:[/green]\n{st.get('original_statement', 'N/A')}\n\n"
-            f"[red]Claimed Statement:[/red]\n{st.get('claimed_statement', 'N/A')}\n\n"
-            f"[yellow]Alterations Detected:[/yellow]\n" +
-            "\n".join([f"• {alt}" for alt in st.get('alterations', [])]),
-            title="Source Tweaking Analysis",
-            border_style="yellow"
-        )
-        console.print(tweak_panel)
-
-    # Narrative & Intention
-    if result.get("narrative_intention"):
-        ni = result["narrative_intention"]
+    # Narrative & Intention Matrix
+    narrative = result.get("narrative") or result.get("narrative_intention")
+    if narrative:
+        hooks = narrative.get('emotional_hooks', [])
+        hooks_str = ', '.join(hooks) if isinstance(hooks, list) else str(hooks)
         ni_panel = Panel(
-            f"Core Narrative: {ni.get('core_narrative', 'N/A')}\n"
-            f"Emotional Hooks: {', '.join(ni.get('emotional_hooks', []))}\n"
-            f"Target Demographic: {ni.get('target_demographic', 'N/A')}\n"
-            f"Plausible Intent: {ni.get('plausible_intent', 'N/A')}",
-            title="Narrative & Intention Matrix",
-            border_style="purple"
+            f"Core Narrative: [bold]{narrative.get('core_narrative', 'N/A')}[/bold]\n"
+            f"Emotional Hooks: {hooks_str}\n"
+            f"Target Demographic: {narrative.get('target_demographic', 'N/A')}\n"
+            f"Plausible Intent: {narrative.get('plausible_intent', 'N/A')}",
+            title="Narrative & Motive Intelligence Matrix",
+            border_style="magenta"
         )
         console.print(ni_panel)
 
-    # Evidence
-    if result.get("evidence"):
-        evidence_table = Table(title="Evidence & Sources")
-        evidence_table.add_column("Source", style="cyan")
-        evidence_table.add_column("URL", style="blue")
-        evidence_table.add_column("Timestamp", style="magenta")
+    # Timeline & Provenance Propagation
+    timeline = result.get("timeline", [])
+    if timeline:
+        timeline_table = Table(title="Chronological Provenance Timeline")
+        timeline_table.add_column("Timestamp / Earliest CDX", style="cyan", no_wrap=True)
+        timeline_table.add_column("Source / Platform", style="green")
+        timeline_table.add_column("Title / Discovered Event", style="white")
+        timeline_table.add_column("Credibility", style="yellow")
 
-        for evidence in result["evidence"]:
+        for event in timeline:
+            ts = event.get("earliest_cdx_timestamp") or event.get("timestamp") or "N/A"
+            timeline_table.add_row(
+                str(ts)[:19],
+                event.get("source", "Web"),
+                (event.get("title") or event.get("event") or "")[:70],
+                event.get("credibility_tier", "unverified")
+            )
+        console.print(timeline_table)
+
+    # Discovered Evidence & Fact-Checking Sources
+    evidence_list = []
+    for sub in result.get("sub_claims", []):
+        for ev in sub.get("evidence", []):
+            evidence_list.append(ev)
+
+    if evidence_list:
+        evidence_table = Table(title="Corroborating & Registry Evidence")
+        evidence_table.add_column("Domain / Source", style="cyan")
+        evidence_table.add_column("URL", style="blue")
+        evidence_table.add_column("Tier", style="magenta")
+
+        for ev in evidence_list[:8]:
+            src = ev.get("source", {})
             evidence_table.add_row(
-                evidence.get("source", ""),
-                evidence.get("url", ""),
-                evidence.get("timestamp", "")
+                src.get("domain", "web"),
+                src.get("url", ""),
+                src.get("credibility_tier", "unverified")
             )
         console.print(evidence_table)
+
+    # Cross-Investigation Memory & Episodic Recall
+    cross_mem = result.get("cross_investigation_memory", [])
+    if cross_mem:
+        console.print(f"\n[bold green][MEM][/bold green] Episodic Learning Memory Match: Found {len(cross_mem)} related historical investigations.")
 
 @app.command()
 def health():
@@ -165,11 +182,11 @@ def health():
     try:
         response = requests.get(f"{API_BASE_URL}/health")
         if response.status_code == 200:
-            console.print("[green]��✓ API is healthy and running[/green]")
+            console.print("[green][OK] API is healthy and running[/green]")
         else:
-            console.print(f"[red]��✗ API returned status code: {response.status_code}[/red]")
+            console.print(f"[red][ERR] API returned status code: {response.status_code}[/red]")
     except requests.exceptions.RequestException as e:
-        console.print(f"[red]��✗ Cannot connect to API: {str(e)}[/red]")
+        console.print(f"[red][ERR] Cannot connect to API: {str(e)}[/red]")
         console.print("[yellow]Make sure the backend server is running on http://localhost:8000[/yellow]")
 
 if __name__ == "__main__":

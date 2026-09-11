@@ -26,13 +26,25 @@ CREDIBILITY_REGISTRY = {
     "fullfact.org": {"tier": "registry", "mbfc": "Fact-Checked Registry", "ifcn": True},
     "leadstories.com": {"tier": "registry", "mbfc": "Fact-Checked Registry", "ifcn": True},
     "afp.com": {"tier": "registry", "mbfc": "Fact-Checked Registry", "ifcn": True},
+    "newschecker.in": {"tier": "registry", "mbfc": "Fact-Checked / IFCN Signatory", "ifcn": True},
+    "boomlive.in": {"tier": "registry", "mbfc": "Fact-Checked / IFCN Signatory", "ifcn": True},
+    "altnews.in": {"tier": "registry", "mbfc": "Fact-Checked / IFCN Signatory", "ifcn": True},
+    "factly.in": {"tier": "registry", "mbfc": "Fact-Checked / IFCN Signatory", "ifcn": True},
+    "factcrescendo.com": {"tier": "registry", "mbfc": "Fact-Checked / IFCN Signatory", "ifcn": True},
+    "cyberpeace.org": {"tier": "registry", "mbfc": "Cyber & Disinformation Research", "ifcn": False},
+    "vishvasnews.com": {"tier": "registry", "mbfc": "Fact-Checked / IFCN Signatory", "ifcn": True},
     
     # Mainstream News
+    "thehindu.com": {"tier": "mainstream", "mbfc": "Left-Center / High Credibility", "ifcn": False},
+    "frontline.thehindu.com": {"tier": "mainstream", "mbfc": "Left-Center / High Credibility", "ifcn": False},
+    "indianexpress.com": {"tier": "mainstream", "mbfc": "Center / High Credibility", "ifcn": False},
     "bbc.com": {"tier": "mainstream", "mbfc": "Left-Center / High Credibility", "ifcn": False},
     "nytimes.com": {"tier": "mainstream", "mbfc": "Left-Center / High Credibility", "ifcn": False},
     "theguardian.com": {"tier": "mainstream", "mbfc": "Left-Center / High Credibility", "ifcn": False},
     "washingtonpost.com": {"tier": "mainstream", "mbfc": "Left-Center / High Credibility", "ifcn": False},
     "wsj.com": {"tier": "mainstream", "mbfc": "Right-Center / High Credibility", "ifcn": False},
+    "ndtv.com": {"tier": "mainstream", "mbfc": "Center / High Credibility", "ifcn": False},
+    "indiatoday.in": {"tier": "mainstream", "mbfc": "Center / High Credibility", "ifcn": False},
     
     # Satire
     "theonion.com": {"tier": "satire", "mbfc": "Satire", "ifcn": False},

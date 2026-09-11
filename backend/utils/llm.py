@@ -101,10 +101,9 @@ class LLMManager:
             except Exception as e:
                 logger.warning(f"Failed to initialize HF Inference client: {e}")
 
-        # Fallback to local free model using transformers
-        if TRANSFORMERS_AVAILABLE:
+        # Optional fallback to local free model using transformers if explicitly enabled
+        if TRANSFORMERS_AVAILABLE and os.getenv("TRUTHTRACE_USE_LOCAL_TRANSFORMERS", "0") == "1":
             try:
-                # Use a small, fast model suitable for CPU
                 model_name = "google/flan-t5-small"
                 logger.info(f"Loading local model {model_name} for free LLM fallback")
                 self.local_pipeline = pipeline(
@@ -120,8 +119,8 @@ class LLMManager:
             except Exception as e:
                 logger.warning(f"Failed to load local transformers model: {e}")
 
-        # If all else fails, we'll use rule-based fallback (already implemented in agents)
-        logger.warning("No LLM available; agents will use rule-based fallback")
+        # If no LLM keys are configured, use deterministic NLP rule-based engines
+        logger.info("No cloud LLM API key detected; using deterministic content-aware forensic NLP")
         self.model_name = None
 
     def generate(self, prompt: str, max_tokens: int = 512, temperature: float = 0.7) -> str:

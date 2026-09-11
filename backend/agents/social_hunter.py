@@ -22,7 +22,7 @@ class SocialHunterAgent(BaseAgent):
         self.reddit_client_id = os.getenv("REDDIT_CLIENT_ID")
         self.reddit_client_secret = os.getenv("REDDIT_CLIENT_SECRET")
         self.user_agent = os.getenv("REDDIT_USER_AGENT", "TruthTrace-OSINT/1.0")
-        self.timeout = float(os.getenv("TRUTHTRACE_SOCIAL_TIMEOUT", "10.0"))
+        self.timeout = float(os.getenv("TRUTHTRACE_SOCIAL_TIMEOUT", "3.0"))
 
     async def execute(self, input_data: Dict[str, Any]) -> AgentResult:
         """
@@ -49,11 +49,6 @@ class SocialHunterAgent(BaseAgent):
 
                     r_items = reddit_posts if isinstance(reddit_posts, list) else []
                     t_items = telegram_posts if isinstance(telegram_posts, list) else []
-
-                    # Fallback if APIs are offline or empty
-                    if not r_items and not t_items:
-                        r_items = self._generate_fallback_reddit(claim, idx)
-                        t_items = self._generate_fallback_telegram(claim, idx)
 
                     for item in r_items:
                         all_social_provenance.append({
@@ -139,8 +134,8 @@ class SocialHunterAgent(BaseAgent):
         results = []
         try:
             # Check public news and viral aggregator channels
-            sample_channels = ["breakingnews", "disaboroadcast", "worldnews"]
-            for ch in sample_channels[:1]:
+            sample_channels = ["breakingnews", "worldnews"]
+            for ch in sample_channels:
                 url = f"https://t.me/s/{ch}"
                 resp = await client.get(url, headers={"User-Agent": self.user_agent})
                 if resp.status_code == 200 and query.lower()[:15] in resp.text.lower():
@@ -153,27 +148,3 @@ class SocialHunterAgent(BaseAgent):
         except Exception as e:
             logger.debug(f"Telegram search error: {e}")
         return results
-
-    def _generate_fallback_reddit(self, claim: str, index: int) -> List[Dict[str, Any]]:
-        """Generate realistic social post for offline execution."""
-        return [
-            {
-                "title": f"Did anyone else see this claim: '{claim[:50]}'?",
-                "author": f"viral_hunter_{index}",
-                "subreddit": "news_discussion",
-                "url": f"https://www.reddit.com/r/news_discussion/comments/claim_{index}",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "engagement": {"score": 45, "num_comments": 18, "upvote_ratio": 0.88}
-            }
-        ]
-
-    def _generate_fallback_telegram(self, claim: str, index: int) -> List[Dict[str, Any]]:
-        """Generate realistic public Telegram post for offline execution."""
-        return [
-            {
-                "channel": "global_alerts_feed",
-                "text": f"🚨 Trending broadcast: {claim}",
-                "url": f"https://t.me/global_alerts_feed/post_{index}",
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-        ]
