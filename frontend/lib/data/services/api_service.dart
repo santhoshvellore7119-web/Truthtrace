@@ -42,4 +42,47 @@ class ApiService {
       throw Exception('Failed to communicate with TruthTrace backend: $e');
     }
   }
+
+  Future<bool> submitFeedback({
+    required String dossierId,
+    required String rating,
+    String? feedbackType,
+    String? correctionText,
+    String? evidenceUrl,
+  }) async {
+    final endpoint = Uri.parse('$baseUrl/feedback');
+    try {
+      final response = await http.post(
+        endpoint,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'dossier_id': dossierId,
+          'rating': rating,
+          'feedback_type': feedbackType ?? 'accuracy',
+          'correction_text': correctionText,
+          'evidence_url': evidenceUrl,
+        }),
+      ).timeout(const Duration(seconds: 15));
+
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchLearningStats() async {
+    final endpoint = Uri.parse('$baseUrl/learning/stats');
+    try {
+      final response = await http.get(endpoint).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        return jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+      }
+      return {};
+    } catch (e) {
+      return {};
+    }
+  }
 }

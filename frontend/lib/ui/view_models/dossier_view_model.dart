@@ -90,6 +90,36 @@ class DossierViewModel extends ChangeNotifier {
     }
   }
 
+  bool _feedbackSubmitted = false;
+  bool get feedbackSubmitted => _feedbackSubmitted;
+
+  String? _feedbackMessage;
+  String? get feedbackMessage => _feedbackMessage;
+
+  Future<void> submitFeedback({
+    required String rating,
+    String? feedbackType,
+    String? correctionText,
+    String? evidenceUrl,
+  }) async {
+    if (_dossier == null) return;
+    final success = await _apiService.submitFeedback(
+      dossierId: _dossier!.id,
+      rating: rating,
+      feedbackType: feedbackType,
+      correctionText: correctionText,
+      evidenceUrl: evidenceUrl,
+    );
+
+    if (success) {
+      _feedbackSubmitted = true;
+      _feedbackMessage = 'Thank you! TruthTrace has updated its learning memory.';
+    } else {
+      _feedbackMessage = 'Failed to submit feedback. Check backend connection.';
+    }
+    notifyListeners();
+  }
+
   void shareDossier() {
     if (_dossier == null) return;
     final d = _dossier!;
@@ -117,6 +147,8 @@ class DossierViewModel extends ChangeNotifier {
     urlController.clear();
     _dossier = null;
     _errorMessage = null;
+    _feedbackSubmitted = false;
+    _feedbackMessage = null;
     notifyListeners();
   }
 

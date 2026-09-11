@@ -620,6 +620,131 @@ class _HomeViewState extends State<HomeView> {
           ),
         ],
 
+        // Continuous Episodic Memory Insights
+        if (dossier.crossInvestigationMemory.isNotEmpty) ...[
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              const Icon(Icons.psychology_outlined, size: 20, color: Colors.purpleAccent),
+              const SizedBox(width: 8),
+              Text(
+                'Learning Memory Recall (${dossier.crossInvestigationMemory.length})',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Card(
+            elevation: 0,
+            color: Colors.purple.withValues(alpha: isDark ? 0.12 : 0.05),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(color: Colors.purpleAccent.withValues(alpha: 0.25)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '🧠 TruthTrace recalled prior user investigations relating to this claim:',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 10),
+                  for (final item in dossier.crossInvestigationMemory)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.history, size: 16, color: Colors.purple),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Prior Query: "${item['query_text']}" • Verdict: ${item['verdict'].toString().toUpperCase()}',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+
+        // Interactive Continuous Learning Feedback Card
+        const SizedBox(height: 24),
+        Card(
+          elevation: 0,
+          color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.auto_awesome, size: 18, color: Colors.amber),
+                    SizedBox(width: 8),
+                    Text(
+                      'Help TruthTrace Learn',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Your validation trains TruthTrace\'s non-parametric memory and domain reputation weights in real time.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 12),
+                if (_viewModel.feedbackSubmitted)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle, color: Colors.green, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _viewModel.feedbackMessage ?? 'Feedback recorded in learning memory!',
+                            style: const TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  Row(
+                    children: [
+                      FilledButton.tonalIcon(
+                        onPressed: () => _viewModel.submitFeedback(rating: 'accurate'),
+                        icon: const Icon(Icons.thumb_up_alt_outlined, size: 16),
+                        label: const Text('Accurate Dossier'),
+                      ),
+                      const SizedBox(width: 10),
+                      OutlinedButton.icon(
+                        onPressed: () => _viewModel.submitFeedback(rating: 'inaccurate'),
+                        icon: const Icon(Icons.thumb_down_alt_outlined, size: 16),
+                        label: const Text('Report Discrepancy'),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ),
+
         // Action buttons
         const SizedBox(height: 24),
         Row(

@@ -175,6 +175,7 @@ class Dossier(BaseModel):
     red_team_audit: RedTeamAudit = Field(default_factory=RedTeamAudit)
     overall_verdict: Literal["true", "false", "misleading", "unverified", "satire", "opinion"]
     overall_confidence: float = Field(..., ge=0.0, le=1.0)
+    cross_investigation_memory: List[Dict[str, Any]] = Field(default_factory=list)
     generated_at: datetime = Field(default_factory=datetime.now)
 
     @validator('sub_claims')

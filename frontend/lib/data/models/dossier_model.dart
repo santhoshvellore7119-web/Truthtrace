@@ -13,6 +13,7 @@ class DossierModel {
   final List<SubClaimModel> subClaims;
   final NarrativeProfileModel? narrative;
   final RedTeamAuditModel? redTeamAudit;
+  final List<Map<String, dynamic>> crossInvestigationMemory;
   final DateTime? generatedAt;
 
   DossierModel({
@@ -30,6 +31,7 @@ class DossierModel {
     this.subClaims = const [],
     this.narrative,
     this.redTeamAudit,
+    this.crossInvestigationMemory = const [],
     this.generatedAt,
   });
 
@@ -62,6 +64,10 @@ class DossierModel {
           [],
       narrative: json['narrative'] != null ? NarrativeProfileModel.fromJson(json['narrative']) : null,
       redTeamAudit: json['red_team_audit'] != null ? RedTeamAuditModel.fromJson(json['red_team_audit']) : null,
+      crossInvestigationMemory: (json['cross_investigation_memory'] as List<dynamic>?)
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList() ??
+          [],
       generatedAt: json['generated_at'] != null ? DateTime.tryParse(json['generated_at'] as String) : null,
     );
   }

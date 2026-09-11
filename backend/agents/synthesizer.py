@@ -17,6 +17,7 @@ from models.schemas import (
     ClaimCluster, AttributionReport, VideoForensics
 )
 from utils.vector_store import vector_store
+from memory.learning_store import LearningMemoryStore
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +114,15 @@ class SynthesizerAgent(BaseAgent):
                 except Exception as e:
                     logger.debug(f"Video forensics parsing error: {e}")
 
-            # 11. Assemble full Dossier
+            # 11. Cross-Investigation Recall from Episodic Learning Store
+            cross_memory = []
+            try:
+                memory_store = LearningMemoryStore()
+                cross_memory = memory_store.recall_prior_investigations(claims[0], top_k=3)
+            except Exception as e:
+                logger.debug(f"Learning memory recall error: {e}")
+
+            # 12. Assemble full Dossier
             dossier = Dossier(
                 id=str(uuid.uuid4())[:16],
                 input_claim=claims[0],
@@ -130,6 +139,7 @@ class SynthesizerAgent(BaseAgent):
                 red_team_audit=red_team_audit_obj,
                 overall_verdict=verdict,
                 overall_confidence=confidence,
+                cross_investigation_memory=cross_memory,
                 generated_at=datetime.now()
             )
 

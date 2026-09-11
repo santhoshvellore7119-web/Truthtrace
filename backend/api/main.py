@@ -18,13 +18,16 @@ from agents.red_team_auditor import RedTeamAuditorAgent
 from agents.attribution_agent import AttributionAgent
 from agents.video_analyst import VideoAnalystAgent
 from agents.synthesizer import SynthesizerAgent
+from memory.learning_store import LearningMemoryStore
 from models.schemas import Dossier
 
 app = FastAPI(
     title="TruthTrace Forensic Intelligence API",
-    description="Multi-agent forensic pipeline for tracing misinformation narratives back to Patient Zero.",
-    version="1.0.0"
+    description="Multi-agent forensic pipeline with continuous episodic learning for tracing misinformation narratives.",
+    version="1.1.0"
 )
+
+memory_store = LearningMemoryStore()
 
 app.add_middleware(
     CORSMiddleware,
@@ -36,6 +39,13 @@ app.add_middleware(
 class AnalyzeRequest(BaseModel):
     claim: Optional[str] = None
     url: Optional[str] = None
+
+class FeedbackRequest(BaseModel):
+    dossier_id: str
+    rating: str  # 'accurate', 'inaccurate', 'upvote', 'downvote'
+    feedback_type: Optional[str] = "accuracy"
+    correction_text: Optional[str] = None
+    evidence_url: Optional[str] = None
 
 @app.post("/analyze", response_model=Dossier)
 async def analyze_claim(request: AnalyzeRequest):
@@ -155,11 +165,48 @@ async def analyze_claim(request: AnalyzeRequest):
     if not synthesizer_result.success:
         raise HTTPException(status_code=500, detail=f"Synthesis failed: {synthesizer_result.error}")
 
-    return synthesizer_result.data
+    dossier_data = synthesizer_result.data
+
+    # Step 7: Continuous Learning - Record investigation into Episodic Memory
+    try:
+        memory_store.record_investigation(dossier_data)
+    except Exception as e:
+        logger.error(f"Failed to record investigation in learning memory: {e}")
+
+    return dossier_data
+
+@app.post("/feedback")
+async def submit_feedback(feedback: FeedbackRequest):
+    """
+    Submits user feedback, corrections, or new evidence to continuously train
+    and calibrate TruthTrace's domain reputation and verification confidence.
+    """
+    try:
+        success = memory_store.record_user_feedback(
+            investigation_id=feedback.dossier_id,
+            rating=feedback.rating,
+            feedback_type=feedback.feedback_type,
+            correction_text=feedback.correction_text,
+            evidence_url=feedback.evidence_url
+        )
+        return {"status": "success", "message": "Feedback recorded. TruthTrace has updated its learning memory.", "success": success}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving feedback: {str(e)}")
+
+@app.get("/learning/stats")
+async def get_learning_stats():
+    """
+    Returns statistics on TruthTrace's accumulated learning memory, tracked domains, and user contributions.
+    """
+    try:
+        stats = memory_store.get_learning_stats()
+        return stats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching stats: {str(e)}")
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": "1.0.0"}
+    return {"status": "ok", "version": "1.1.0"}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
