@@ -109,7 +109,7 @@ flutter run                 # Run on connected Mobile Emulator / Device
 python cli/src/truthtrace_cli.py health
 
 # Analyze a claim
-python cli/src/truthtrace_cli.py check "A viral Frontline magazine cover shows that a massive Vijay wave has emerged in Tamil Nadu"
+python cli/src/truthtrace_cli.py check "James Webb Space Telescope detected atmospheric carbon dioxide on exoplanet WASP-39 b"
 
 # Analyze a URL and save output
 python cli/src/truthtrace_cli.py check --url "https://example.com/article" --output dossier.json

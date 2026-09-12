@@ -41,19 +41,19 @@ class DossierViewModel extends ChangeNotifier {
 
   final List<WorkedExample> workedExamples = const [
     WorkedExample(
-      title: '5G Bio-Weapon Myth',
-      claim: '5G cellular towers cause acute respiratory illness and suppress biological immunity.',
-      category: 'Conspiracy',
+      title: 'LK-99 Superconductor',
+      claim: 'South Korean researchers synthesized room-temperature ambient pressure superconductor LK-99.',
+      category: 'Materials Science',
     ),
     WorkedExample(
-      title: 'Miracle Cure Hoax',
-      claim: 'Drinking boiled lemon peel with baking soda eliminates 99.9% of biological cancer cells.',
-      category: 'Health',
+      title: 'mRNA Genome Alteration',
+      claim: 'COVID-19 mRNA vaccines permanently alter and integrate into human genomic DNA.',
+      category: 'Genomics',
     ),
     WorkedExample(
-      title: 'Recycled War Video',
-      claim: 'Breaking 2026 footage shows military aircraft intercepting unidentified vehicles over coastal city.',
-      category: 'Recycled Media',
+      title: 'JWST Exoplanet CO2',
+      claim: 'James Webb Space Telescope detected atmospheric carbon dioxide on exoplanet WASP-39 b.',
+      category: 'Astrophysics',
     ),
   ];
 

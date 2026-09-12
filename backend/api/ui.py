@@ -263,16 +263,16 @@ def get_html_ui() -> str:
     <div class="search-card">
       <form id="analyzeForm" onsubmit="handleAnalyze(event)">
         <div class="input-wrapper">
-          <input type="text" id="claimInput" placeholder="Enter political claim, viral headline, or URL..." required autofocus autocomplete="off" />
+          <input type="text" id="claimInput" placeholder="Enter scientific claim, research headline, or publication URL..." required autofocus autocomplete="off" />
           <button type="submit" class="btn-primary" id="submitBtn">Verify Claim</button>
         </div>
       </form>
       <div class="sample-queries">
-        <span class="sample-label">Try sample:</span>
-        <button class="chip" onclick="fillClaim('Frontline magazine published cover on Vijay wave in Tamil Nadu election 2026')">Frontline Vijay Cover</button>
-        <button class="chip" onclick="fillClaim('Actor STR video statement says no regime change in Tamil Nadu')">STR 'No Regime Change'</button>
-        <button class="chip" onclick="fillClaim('DMK leader Kanimozhi chased away by angry voters during election campaign video')">Kanimozhi Chased Video</button>
-        <button class="chip" onclick="fillClaim('TVK won outright majority in Tamil Nadu Assembly Election results confirmed by ECI')">TVK Election Result</button>
+        <span class="sample-label">Try scientific sample:</span>
+        <button class="chip" onclick="fillClaim('James Webb Space Telescope detected atmospheric carbon dioxide on exoplanet WASP-39 b')">JWST Exoplanet CO2</button>
+        <button class="chip" onclick="fillClaim('South Korean researchers synthesized room-temperature ambient pressure superconductor LK-99')">LK-99 Superconductor</button>
+        <button class="chip" onclick="fillClaim('COVID-19 mRNA vaccines permanently alter and integrate into human genomic DNA')">mRNA Vaccine DNA Alteration</button>
+        <button class="chip" onclick="fillClaim('5G mobile networks spread coronavirus or weaken human immune system')">5G Viral Transmission</button>
       </div>
     </div>
 
@@ -370,7 +370,7 @@ def get_html_ui() -> str:
         document.getElementById('narrativeCore').innerText = np.core_narrative || 'Analysis of: ' + claim;
         document.getElementById('narrativeIntent').innerText = np.plausible_intent || 'Information diffusion';
         document.getElementById('narrativeHooks').innerText = (np.emotional_hooks || []).join(', ') || 'None';
-        document.getElementById('narrativeTarget').innerText = np.target_demographic || 'General Electorate';
+        document.getElementById('narrativeTarget').innerText = np.target_demographic || 'General Public / Scientific Community';
 
         // Render Timeline
         const tBody = document.getElementById('timelineBody');
