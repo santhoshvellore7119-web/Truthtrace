@@ -4,6 +4,7 @@ TruthTrace CLI - Command line interface for the Disinformation & Narrative Intel
 import typer
 import requests
 import json
+import sys
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -11,8 +12,15 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from typing import Optional
 import time
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 app = typer.Typer(help="TruthTrace: Disinformation & Narrative Intelligence Engine")
-console = Console()
+console = Console(legacy_windows=False)
 
 # Configuration
 API_BASE_URL = "http://localhost:8000"
