@@ -1,10 +1,13 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import uvicorn
 import asyncio
 import logging
+
+from api.ui import get_html_ui
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +49,13 @@ class FeedbackRequest(BaseModel):
     feedback_type: Optional[str] = "accuracy"
     correction_text: Optional[str] = None
     evidence_url: Optional[str] = None
+
+@app.get("/", response_class=HTMLResponse)
+async def serve_ui():
+    """
+    TruthTrace interactive web UI.
+    """
+    return get_html_ui()
 
 @app.post("/analyze", response_model=Dossier)
 async def analyze_claim(request: AnalyzeRequest):
