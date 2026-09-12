@@ -175,8 +175,11 @@ class FactCheckAgent(BaseAgent):
         results = []
         try:
             ddg_url = "https://lite.duckduckgo.com/lite/"
-            clean_q = claim[:70].strip()
-            fact_query = f"{clean_q} fact check OR debunked OR fake OR ECI"
+            stop_words = {'published', 'statement', 'during', 'says', 'away', 'video', 'magazine', 'results', 'assembly', 'election', 'tamil', 'nadu', 'about', 'actor', 'leader'}
+            tokens = [w for w in re.findall(r'\w+', claim) if len(w) > 2 and w.lower() not in stop_words]
+            keywords = ' '.join(tokens[:3]) or claim[:40]
+            fact_query = f"{keywords} fact check"
+
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             }
@@ -184,12 +187,12 @@ class FactCheckAgent(BaseAgent):
             if resp.status_code == 200:
                 parser = FactCheckDDGParser()
                 parser.feed(resp.text)
-                for res in parser.results[:6]:
+                for res in parser.results[:8]:
                     if res.get("url") and res.get("title"):
                         domain = urllib.parse.urlparse(res["url"]).netloc.lower()
                         title_lower = res["title"].lower()
-                        # Only keep if from fact checking / news registry or contains clear fact check markers
-                        if any(d in domain for d in ["newschecker.in", "boomlive.in", "altnews.in", "factcrescendo.com", "vishvasnews.com", "cyberpeace.org", "snopes.com", "politifact.com", "reuters.com", "southcheck.in", "thehindu.com", "eci.gov.in"]) or any(w in title_lower for w in ["fact check", "fake", "debunk", "false", "hoax", "misleading", "confirmed"]):
+                        # Match recognized fact checking registries or titles with explicit fact-check markers
+                        if any(d in domain for d in ["newschecker.in", "boomlive.in", "altnews.in", "factcrescendo.com", "vishvasnews.com", "cyberpeace.org", "snopes.com", "politifact.com", "reuters.com", "southcheck.in", "newsmeter.in", "thehindu.com", "eci.gov.in", "factly.in"]) or any(w in title_lower for w in ["fact check", "fake", "debunk", "false", "hoax", "misleading", "confirmed", "chased away"]):
                             results.append({
                                 "title": res["title"],
                                 "url": res["url"],
