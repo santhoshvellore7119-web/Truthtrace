@@ -19,8 +19,8 @@ class WaybackAgent(BaseAgent):
     """
     def __init__(self):
         super().__init__("WaybackAgent")
-        self.cdx_api_url = os.getenv("WAYBACK_CDX_API_URL", "http://web.archive.org/cdx/search/cdx")
-        self.timeout = float(os.getenv("TRUTHTRACE_CDX_TIMEOUT", "4.0"))
+        self.cdx_api_url = os.getenv("WAYBACK_CDX_API_URL", "https://web.archive.org/cdx/search/cdx")
+        self.timeout = float(os.getenv("TRUTHTRACE_CDX_TIMEOUT", "2.5"))
 
     async def execute(self, input_data: Dict[str, Any]) -> AgentResult:
         """

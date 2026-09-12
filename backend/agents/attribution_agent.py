@@ -10,6 +10,8 @@ import urllib.parse
 import logging
 import os
 import re
+import asyncio
+import httpx
 
 from models.schemas import AttributionReport, DomainAttribution, CoordinationSignal
 
@@ -60,10 +62,12 @@ CREDIBILITY_REGISTRY = {
 
 class AttributionAgent(BaseAgent):
     """
-    Evaluates domain registrations, publisher reputations, and account coordination bursts.
+    Evaluates domain registrations via real RDAP/WHOIS queries, publisher reputations,
+    and account coordination bursts.
     """
     def __init__(self):
         super().__init__("AttributionAgent")
+        self.timeout = float(os.getenv("TRUTHTRACE_WHOIS_TIMEOUT", "2.5"))
 
     async def execute(self, input_data: Dict[str, Any]) -> AgentResult:
         """
@@ -75,7 +79,7 @@ class AttributionAgent(BaseAgent):
             social_prov = input_data.get('social_provenance', [])
             combined_items = provenance + social_prov
 
-            domains = self._analyze_domains(combined_items)
+            domains = await self._analyze_domains(combined_items)
             coordination = self._detect_coordination(combined_items)
 
             # Generate summary
@@ -104,9 +108,9 @@ class AttributionAgent(BaseAgent):
             logger.error(f"Attribution agent error: {e}")
             return AgentResult(success=False, error=str(e))
 
-    def _analyze_domains(self, items: List[Dict]) -> List[DomainAttribution]:
-        """Extract and inspect domains from evidence."""
-        domain_map: Dict[str, DomainAttribution] = {}
+    async def _analyze_domains(self, items: List[Dict]) -> List[DomainAttribution]:
+        """Extract and inspect domains from evidence using real RDAP WHOIS queries."""
+        domain_items: Dict[str, Dict[str, Any]] = {}
 
         for item in items:
             url = item.get('url') or item.get('source_url', '')
@@ -116,43 +120,111 @@ class AttributionAgent(BaseAgent):
             try:
                 parsed = urllib.parse.urlparse(url)
                 raw_domain = parsed.netloc.lower()
-                # Clean www
                 domain = raw_domain.replace('www.', '')
-                if not domain or domain in domain_map:
+                if not domain or domain in domain_items:
                     continue
 
-                # Check MBFC / IFCN registry
                 reg_info = CREDIBILITY_REGISTRY.get(domain)
                 if reg_info:
                     tier = reg_info["tier"]
                     mbfc = reg_info["mbfc"]
                     ifcn = reg_info["ifcn"]
-                    reg_date = datetime(2010, 1, 1, tzinfo=timezone.utc)
-                    age_days = (datetime.now(timezone.utc) - reg_date).days
-                    is_fresh = False
                 else:
-                    # Generic domain inspection
                     tier = "unverified"
                     mbfc = "Unclassified Web Source"
                     ifcn = False
-                    # Heuristic domain age simulation / WHOIS estimate
-                    is_fresh = any(ext in domain for ext in ['.xyz', '.top', '.buzz', '.news-update'])
-                    age_days = 45 if is_fresh else 1800
-                    reg_date = datetime.now(timezone.utc) if is_fresh else datetime(2018, 5, 1, tzinfo=timezone.utc)
 
-                domain_map[domain] = DomainAttribution(
-                    domain=domain,
-                    registration_date=reg_date,
-                    domain_age_days=age_days,
-                    is_freshly_registered=is_fresh,
-                    mbfc_rating=mbfc,
-                    is_ifcn_signatory=ifcn,
-                    credibility_tier=tier
-                )
+                domain_items[domain] = {
+                    "domain": domain,
+                    "tier": tier,
+                    "mbfc": mbfc,
+                    "ifcn": ifcn
+                }
             except Exception as e:
                 logger.debug(f"Domain parsing warning: {e}")
 
-        return list(domain_map.values())
+        # Run real RDAP WHOIS queries for discovered domains (cap at 6 domains to bound latency)
+        unique_domains = list(domain_items.keys())[:6]
+        rdap_results = {}
+
+        if unique_domains:
+            headers = {"User-Agent": "TruthTrace-Attribution/1.0", "Accept": "application/rdap+json, application/json"}
+            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True, headers=headers) as client:
+                tasks = [self._lookup_domain_rdap(client, d) for d in unique_domains]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for d, r in zip(unique_domains, results):
+                    if isinstance(r, dict):
+                        rdap_results[d] = r
+
+        domain_attributions = []
+        for domain, info in domain_items.items():
+            rdap_info = rdap_results.get(domain, {})
+            reg_date = rdap_info.get("registration_date")
+            age_days = rdap_info.get("domain_age_days")
+            is_fresh = rdap_info.get("is_freshly_registered", False)
+
+            # Check if domain has a known throwaway suspicious TLD
+            if is_fresh is False and any(domain.endswith(ext) for ext in ['.xyz', '.top', '.buzz', '.news-update']):
+                is_fresh = True
+
+            domain_attributions.append(DomainAttribution(
+                domain=domain,
+                registration_date=reg_date,
+                domain_age_days=age_days,
+                is_freshly_registered=is_fresh,
+                mbfc_rating=info["mbfc"],
+                is_ifcn_signatory=info["ifcn"],
+                credibility_tier=info["tier"]
+            ))
+
+        return domain_attributions
+
+    async def _lookup_domain_rdap(self, client: httpx.AsyncClient, domain: str) -> Dict[str, Any]:
+        """Perform keyless RDAP lookup for real domain registration date."""
+        try:
+            rdap_url = f"https://rdap.org/domain/{domain}"
+            resp = await client.get(rdap_url)
+            if resp.status_code == 200:
+                data = resp.json()
+                events = data.get("events", [])
+                reg_date = None
+                for ev in events:
+                    if ev.get("eventAction") in ["registration", "registered"]:
+                        raw_date = ev.get("eventDate")
+                        if raw_date:
+                            try:
+                                reg_date = datetime.fromisoformat(raw_date.replace('Z', '+00:00'))
+                            except Exception:
+                                pass
+                            break
+
+                if not reg_date and events:
+                    # Fallback to earliest eventDate if available
+                    for ev in events:
+                        raw_date = ev.get("eventDate")
+                        if raw_date:
+                            try:
+                                reg_date = datetime.fromisoformat(raw_date.replace('Z', '+00:00'))
+                                break
+                            except Exception:
+                                pass
+
+                if reg_date:
+                    age_days = (datetime.now(timezone.utc) - reg_date).days
+                    is_fresh = age_days < 90
+                    return {
+                        "registration_date": reg_date,
+                        "domain_age_days": max(0, age_days),
+                        "is_freshly_registered": is_fresh
+                    }
+        except Exception as e:
+            logger.debug(f"RDAP lookup failed for {domain}: {e}")
+
+        return {
+            "registration_date": None,
+            "domain_age_days": None,
+            "is_freshly_registered": False
+        }
 
     def _detect_coordination(self, items: List[Dict]) -> CoordinationSignal:
         """Detect coordinated posting patterns across accounts."""

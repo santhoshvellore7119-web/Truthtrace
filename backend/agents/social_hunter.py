@@ -130,21 +130,33 @@ class SocialHunterAgent(BaseAgent):
         return results
 
     async def _search_telegram_public(self, client: httpx.AsyncClient, query: str) -> List[Dict[str, Any]]:
-        """Search public Telegram web previews."""
+        """Search public Telegram web previews for genuine message hits."""
         results = []
         try:
-            # Check public news and viral aggregator channels
             sample_channels = ["breakingnews", "worldnews"]
+            clean_q = query.lower()[:25].strip()
+            if not clean_q or len(clean_q) < 4:
+                return results
+
             for ch in sample_channels:
                 url = f"https://t.me/s/{ch}"
                 resp = await client.get(url, headers={"User-Agent": self.user_agent})
-                if resp.status_code == 200 and query.lower()[:15] in resp.text.lower():
-                    results.append({
-                        "channel": ch,
-                        "text": f"Forwarded message concerning: {query[:60]}",
-                        "url": f"https://t.me/{ch}",
-                        "timestamp": datetime.now(timezone.utc).isoformat()
-                    })
+                if resp.status_code == 200 and clean_q in resp.text.lower():
+                    # Extract the actual post message snippet from HTML
+                    matches = re.findall(r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>', resp.text, re.DOTALL)
+                    actual_text = ""
+                    for m in matches:
+                        plain = re.sub(r'<[^>]+>', '', m).strip()
+                        if clean_q in plain.lower():
+                            actual_text = plain[:150]
+                            break
+                    if actual_text:
+                        results.append({
+                            "channel": ch,
+                            "text": actual_text,
+                            "url": f"https://t.me/s/{ch}",
+                            "timestamp": datetime.now(timezone.utc).isoformat()
+                        })
         except Exception as e:
             logger.debug(f"Telegram search error: {e}")
         return results

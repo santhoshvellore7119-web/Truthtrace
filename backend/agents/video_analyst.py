@@ -63,16 +63,23 @@ class VideoAnalystAgent(BaseAgent):
             return AgentResult(success=False, error=str(e))
 
     async def _analyze_video(self, client: httpx.AsyncClient, video_url: str, claims: List[str]) -> VideoForensics:
-        """Analyze a specific video URL using YouTube APIs / oEmbed."""
+        """Analyze a specific video URL using YouTube APIs / oEmbed honestly."""
         title = "Analyzed Video Content"
         channel = "Unknown Channel"
         published_at = datetime.now(timezone.utc)
-        view_count = 1000
+        view_count = None
 
         try:
-            # Fetch oEmbed for YouTube
+            # Fetch real oEmbed for YouTube
             if "youtube.com" in video_url or "youtu.be" in video_url:
                 oembed_url = f"https://www.youtube.com/oembed?url={video_url}&format=json"
+                resp = await client.get(oembed_url)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    title = data.get("title", title)
+                    channel = data.get("author_name", channel)
+            elif "vimeo.com" in video_url:
+                oembed_url = f"https://vimeo.com/api/oembed.json?url={video_url}"
                 resp = await client.get(oembed_url)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -81,34 +88,35 @@ class VideoAnalystAgent(BaseAgent):
         except Exception as e:
             logger.debug(f"Video oEmbed lookup warning: {e}")
 
-        # Recycling detection heuristics: check if video title contradicts claim or dates from earlier events
-        is_recycled = any(w in title.lower() for w in ["archive", "old", "2019", "2020", "documentary", "drill", "exercise"])
-        conf = 0.85 if is_recycled else 0.20
+        # Temporal recycling detection heuristics from authentic video title/metadata
+        title_lower = title.lower()
+        is_recycled = any(w in title_lower for w in ["archive", "old", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "documentary", "throwback"])
+        conf = 0.85 if is_recycled else 0.0
 
-        transcript_excerpt = f"Spoken audio transcript matching assertion: '{claims[0] if claims else title}'"
+        verdict_notes = f"Recycled historical footage identified in title metadata ('{title}')." if is_recycled else f"Video metadata resolved: '{title}' by {channel}. Raw frame/speech extraction not performed."
 
         return VideoForensics(
             video_url=video_url,
             channel_name=channel,
             published_at=published_at,
             view_count=view_count,
-            transcript_excerpt=transcript_excerpt,
+            transcript_excerpt=None,  # Honest null: no local Whisper worker attached
             is_recycled_footage=is_recycled,
             recycling_confidence=conf,
-            keyframe_matches=[f"Keyframe 00:04 - Visual scene match: {title[:30]}..."],
-            verdict_notes="Out-of-context archival footage identified." if is_recycled else "No video manipulation or footage recycling detected."
+            keyframe_matches=[],       # Honest null: no frame extraction worker attached
+            verdict_notes=verdict_notes
         )
 
     def _generate_simulated_video_analysis(self, claim_text: str) -> VideoForensics:
-        """Generate forensic summary when claim has no direct video attachment."""
+        """Honest null response when claim has no video attachment."""
         return VideoForensics(
             video_url=None,
-            channel_name="Multi-platform Broadcast Signals",
-            published_at=datetime.now(timezone.utc),
+            channel_name=None,
+            published_at=None,
             view_count=None,
-            transcript_excerpt=f"Extracted claim keywords: '{claim_text[:60]}...'",
+            transcript_excerpt=None,
             is_recycled_footage=False,
-            recycling_confidence=0.10,
+            recycling_confidence=0.0,
             keyframe_matches=[],
             verdict_notes="Claim does not contain an associated video stream for deep visual forensics."
         )
