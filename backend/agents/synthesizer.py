@@ -74,7 +74,7 @@ class SynthesizerAgent(BaseAgent):
             timeline = self._build_timeline(combined_provenance, wayback_snapshots)
 
             # 4. Determine overall verdict & confidence
-            verdict, confidence = self._determine_overall_verdict(fact_check_results, red_team_audit)
+            verdict, confidence = self._determine_overall_verdict(fact_check_results, red_team_audit, combined_provenance)
 
             # 5. Extract Patient Zero candidate from earliest timeline event or cluster
             patient_zero = self._extract_patient_zero(timeline, combined_provenance, clusters)
@@ -256,15 +256,24 @@ class SynthesizerAgent(BaseAgent):
             prior_flagged_claims=0
         )
 
-    def _determine_overall_verdict(self, fact_check_results: List[Dict], red_team_audit: Dict) -> tuple[str, float]:
-        """Compute overall verdict and confidence."""
+    def _determine_overall_verdict(self, fact_check_results: List[Dict], red_team_audit: Dict, provenance: Optional[List[Dict]] = None) -> tuple[str, float]:
+        """Compute overall verdict and confidence from fact checks and corroborating provenance."""
+        verdict = "unverified"
+        confidence = 0.50
+
         if fact_check_results:
             first_fc = fact_check_results[0]
-            verdict = first_fc.get('verdict', 'unverified').lower()
-            confidence = float(first_fc.get('confidence', 0.60))
-        else:
-            verdict = "unverified"
-            confidence = 0.50
+            fc_verdict = first_fc.get('verdict', 'unverified').lower()
+            if fc_verdict != "unverified":
+                verdict = fc_verdict
+                confidence = float(first_fc.get('confidence', 0.85))
+
+        # If no explicit debunk/fact-check registry entry, inspect mainstream news provenance
+        if verdict == "unverified" and provenance:
+            mainstream_items = [p for p in provenance if p.get('credibility_tier') in ['mainstream', 'registry', 'primary']]
+            if len(mainstream_items) >= 2:
+                verdict = "true"
+                confidence = 0.80
 
         # Adjust for red-team audit if provided
         adj = float(red_team_audit.get('confidence_adjustment', 0.0))

@@ -10,6 +10,9 @@ import asyncio
 import httpx
 import logging
 import os
+import re
+import email.utils
+import xml.etree.ElementTree as ET
 import urllib.parse
 from html.parser import HTMLParser
 
@@ -91,6 +94,7 @@ class OSINTHunterAgent(BaseAgent):
             raw_sources = {
                 "web_search": [],
                 "wikipedia": [],
+                "google_news": [],
                 "gdelt": [],
                 "news_api": [],
                 "fact_check": []
@@ -103,8 +107,9 @@ class OSINTHunterAgent(BaseAgent):
 
             async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True, headers=headers) as client:
                 for idx, claim in enumerate(claims):
-                    # Query DDG Lite, Wikipedia, GDELT, NewsAPI, and Google Fact Check in parallel
+                    # Query Google News RSS, DDG Lite, Wikipedia, GDELT, NewsAPI, and Google Fact Check in parallel
                     tasks = [
+                        self._query_google_news_rss(client, claim),
                         self._query_web_search(client, claim),
                         self._query_wikipedia(client, claim),
                         self._query_gdelt(client, claim),
@@ -112,14 +117,16 @@ class OSINTHunterAgent(BaseAgent):
                         self._query_google_fact_check(client, claim)
                     ]
                     
-                    web_results, wiki_results, gdelt_results, news_results, fact_check_results = await asyncio.gather(*tasks, return_exceptions=True)
+                    gnews_results, web_results, wiki_results, gdelt_results, news_results, fact_check_results = await asyncio.gather(*tasks, return_exceptions=True)
 
+                    gnews_items = gnews_results if isinstance(gnews_results, list) else []
                     web_items = web_results if isinstance(web_results, list) else []
                     wiki_items = wiki_results if isinstance(wiki_results, list) else []
                     gdelt_items = gdelt_results if isinstance(gdelt_results, list) else []
                     news_items = news_results if isinstance(news_results, list) else []
                     fc_items = fact_check_results if isinstance(fact_check_results, list) else []
 
+                    raw_sources["google_news"].extend(gnews_items)
                     raw_sources["web_search"].extend(web_items)
                     raw_sources["wikipedia"].extend(wiki_items)
                     raw_sources["gdelt"].extend(gdelt_items)
@@ -128,12 +135,47 @@ class OSINTHunterAgent(BaseAgent):
 
                     # Build unified provenance records for each discovered item
                     claim_prov = []
+
+                    # 0. Live Google News RSS items (Free, keyless, real-time indexed)
+                    for item in gnews_items:
+                        domain = item.get("domain", "").lower()
+                        is_gov = domain.endswith('.gov') or domain.endswith('.gov.in') or domain.endswith('.nic.in') or 'eci.gov.in' in domain
+                        is_registry = any(d in domain for d in ["newschecker.in", "boomlive.in", "altnews.in", "factly.in", "factcrescendo.com", "vishvasnews.com", "cyberpeace.org", "snopes.com", "politifact.com", "reuters.com", "apnews.com"])
+                        is_mainstream = is_gov or any(d in domain for d in ["thehindu.com", "frontline.thehindu.com", "indianexpress.com", "bbc.com", "ndtv.com", "indiatoday.in", "newsonair.gov.in", "deccanherald.com", "deccanchronicle.com", "economictimes.indiatimes.com", "timesofindia.indiatimes.com", "indiatimes.com", "livemint.com", "hindustantimes.com", "thewire.in", "thenewsminute.com", "thefederal.com", "ddnews.gov.in", "bhaskar", "fortuneindia.com", "thesouthfirst.com"])
+
+                        if is_registry:
+                            tier = "registry"
+                        elif is_mainstream:
+                            tier = "mainstream"
+                        else:
+                            tier = "unverified"
+
+                        claim_prov.append({
+                            "claim": claim,
+                            "source_type": "google_news",
+                            "platform": f"News: {item.get('source_name') or domain}",
+                            "title": item.get("title"),
+                            "url": item.get("url"),
+                            "domain": domain,
+                            "timestamp": item.get("timestamp") or datetime.now().isoformat(),
+                            "language": "en",
+                            "credibility_tier": tier,
+                            "raw_metadata": item
+                        })
                     
                     # 1. Real Web search items
                     for item in web_items:
                         domain = urllib.parse.urlparse(item.get("url", "")).netloc.lower()
-                        # Tier determination
-                        tier = "unverified"
+                        is_gov = domain.endswith('.gov') or domain.endswith('.gov.in') or domain.endswith('.nic.in') or 'eci.gov.in' in domain
+                        is_registry = any(d in domain for d in ["newschecker.in", "boomlive.in", "altnews.in", "factly.in", "factcrescendo.com", "vishvasnews.com", "cyberpeace.org", "snopes.com", "politifact.com", "reuters.com", "apnews.com"])
+                        is_mainstream = is_gov or any(d in domain for d in ["thehindu.com", "frontline.thehindu.com", "indianexpress.com", "bbc.com", "ndtv.com", "indiatoday.in", "newsonair.gov.in", "deccanherald.com", "deccanchronicle.com", "economictimes.indiatimes.com", "timesofindia.indiatimes.com", "indiatimes.com", "livemint.com", "hindustantimes.com", "thewire.in", "thenewsminute.com", "thefederal.com", "ddnews.gov.in", "bhaskar", "fortuneindia.com", "thesouthfirst.com"])
+
+                        if is_registry:
+                            tier = "registry"
+                        elif is_mainstream:
+                            tier = "mainstream"
+                        else:
+                            tier = "unverified"
                         if any(d in domain for d in ["newschecker.in", "boomlive.in", "altnews.in", "factly.in", "factcrescendo.com", "snopes.com", "politifact.com", "reuters.com", "apnews.com"]):
                             tier = "registry"
                         elif any(d in domain for d in ["thehindu.com", "frontline.thehindu.com", "indianexpress.com", "bbc.com", "ndtv.com", "indiatoday.in"]):
@@ -379,4 +421,54 @@ class OSINTHunterAgent(BaseAgent):
                         })
         except Exception as e:
             logger.debug(f"Google Fact Check API error: {e}")
+        return results
+
+    async def _query_google_news_rss(self, client: httpx.AsyncClient, query: str) -> List[Dict[str, Any]]:
+        """Query Google News RSS for live news and fact-check citations (keyless)."""
+        results = []
+        try:
+            stop_words = {'published', 'statement', 'during', 'says', 'away', 'video', 'about', 'actor', 'leader'}
+            tokens = [w for w in re.findall(r'\w+', query) if len(w) > 2 and w.lower() not in stop_words]
+            clean_query = ' '.join(tokens[:5]) or query[:50]
+            url = f"https://news.google.com/rss/search?q={urllib.parse.quote(clean_query)}&hl=en-IN&gl=IN&ceid=IN:en"
+
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                root = ET.fromstring(resp.text)
+                for item in root.findall('.//item')[:10]:
+                    title_elem = item.find('title')
+                    link_elem = item.find('link')
+                    pubdate_elem = item.find('pubDate')
+                    source_elem = item.find('source')
+
+                    title = title_elem.text if title_elem is not None else ""
+                    link = link_elem.text if link_elem is not None else ""
+                    raw_date = pubdate_elem.text if pubdate_elem is not None else ""
+                    source_name = source_elem.text if source_elem is not None else ""
+                    source_url = source_elem.get('url', '') if source_elem is not None else ""
+
+                    domain = ""
+                    if source_url:
+                        domain = urllib.parse.urlparse(source_url).netloc.lower()
+                    if not domain and link:
+                        domain = urllib.parse.urlparse(link).netloc.lower()
+
+                    iso_date = None
+                    if raw_date:
+                        try:
+                            dt = email.utils.parsedate_to_datetime(raw_date)
+                            iso_date = dt.isoformat()
+                        except Exception:
+                            iso_date = raw_date
+
+                    results.append({
+                        "title": title,
+                        "url": link,
+                        "domain": domain,
+                        "source_name": source_name,
+                        "timestamp": iso_date or datetime.now().isoformat(),
+                        "language": "en"
+                    })
+        except Exception as e:
+            logger.debug(f"Google News RSS query error: {e}")
         return results

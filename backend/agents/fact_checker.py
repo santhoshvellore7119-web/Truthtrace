@@ -5,6 +5,7 @@ import os
 import httpx
 import re
 import urllib.parse
+import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 
 logger = logging.getLogger(__name__)
@@ -171,15 +172,57 @@ class FactCheckAgent(BaseAgent):
             return AgentResult(success=False, error=str(e))
 
     async def _query_keyless_fact_check(self, client: httpx.AsyncClient, claim: str) -> List[Dict[str, Any]]:
-        """Query DuckDuckGo Lite specifically for fact-checks and registry debunks."""
+        """Query Google News RSS and DuckDuckGo Lite specifically for fact-checks and registry debunks."""
         results = []
+        stop_words = {'published', 'statement', 'during', 'says', 'away', 'video', 'magazine', 'results', 'assembly', 'election', 'tamil', 'nadu', 'about', 'actor', 'leader'}
+        tokens = [w for w in re.findall(r'\w+', claim) if len(w) > 2 and w.lower() not in stop_words]
+        keywords = ' '.join(tokens[:3]) or claim[:40]
+
+        # 1. Query Google News RSS for IFCN registry debunks (Free, reliable, unblocked)
+        try:
+            rss_q = urllib.parse.quote(f"{keywords} fact check")
+            rss_url = f"https://news.google.com/rss/search?q={rss_q}&hl=en-IN&gl=IN&ceid=IN:en"
+            resp = await client.get(rss_url)
+            if resp.status_code == 200:
+                root = ET.fromstring(resp.text)
+                for item in root.findall('.//item')[:10]:
+                    title_elem = item.find('title')
+                    link_elem = item.find('link')
+                    pubdate_elem = item.find('pubDate')
+                    source_elem = item.find('source')
+
+                    title = title_elem.text if title_elem is not None else ""
+                    link = link_elem.text if link_elem is not None else ""
+                    raw_date = pubdate_elem.text if pubdate_elem is not None else ""
+                    source_name = source_elem.text if source_elem is not None else ""
+                    source_url = source_elem.get('url', '') if source_elem is not None else ""
+
+                    domain = urllib.parse.urlparse(source_url or link).netloc.lower()
+                    title_lower = title.lower()
+
+                    if any(d in domain for d in ["newschecker.in", "boomlive.in", "altnews.in", "factcrescendo.com", "vishvasnews.com", "cyberpeace.org", "snopes.com", "politifact.com", "reuters.com", "southcheck.in", "newsmeter.in", "factly.in", "thehindu.com", "eci.gov.in"]) or any(w in title_lower for w in ["fact check", "fake", "debunk", "false", "hoax", "misleading", "confirmed", "chased away"]):
+                        results.append({
+                            "title": title,
+                            "url": link,
+                            "domain": domain,
+                            "source_type": "google_news_fact_check",
+                            "platform": f"Fact Check Registry ({source_name or domain})",
+                            "raw_metadata": {
+                                "title": title,
+                                "url": link,
+                                "description": title,
+                                "snippet": title,
+                                "publisher": source_name or domain,
+                                "timestamp": raw_date
+                            }
+                        })
+        except Exception as e:
+            logger.debug(f"Google News RSS fact check error: {e}")
+
+        # 2. Query DuckDuckGo Lite as additional source
         try:
             ddg_url = "https://lite.duckduckgo.com/lite/"
-            stop_words = {'published', 'statement', 'during', 'says', 'away', 'video', 'magazine', 'results', 'assembly', 'election', 'tamil', 'nadu', 'about', 'actor', 'leader'}
-            tokens = [w for w in re.findall(r'\w+', claim) if len(w) > 2 and w.lower() not in stop_words]
-            keywords = ' '.join(tokens[:3]) or claim[:40]
             fact_query = f"{keywords} fact check"
-
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             }
@@ -191,24 +234,25 @@ class FactCheckAgent(BaseAgent):
                     if res.get("url") and res.get("title"):
                         domain = urllib.parse.urlparse(res["url"]).netloc.lower()
                         title_lower = res["title"].lower()
-                        # Match recognized fact checking registries or titles with explicit fact-check markers
                         if any(d in domain for d in ["newschecker.in", "boomlive.in", "altnews.in", "factcrescendo.com", "vishvasnews.com", "cyberpeace.org", "snopes.com", "politifact.com", "reuters.com", "southcheck.in", "newsmeter.in", "thehindu.com", "eci.gov.in", "factly.in"]) or any(w in title_lower for w in ["fact check", "fake", "debunk", "false", "hoax", "misleading", "confirmed", "chased away"]):
-                            results.append({
-                                "title": res["title"],
-                                "url": res["url"],
-                                "domain": domain,
-                                "source_type": "web_search",
-                                "platform": f"Fact Check Registry ({domain})",
-                                "raw_metadata": {
+                            if not any(r["title"] == res["title"] for r in results):
+                                results.append({
                                     "title": res["title"],
                                     "url": res["url"],
-                                    "description": res.get("snippet", ""),
-                                    "snippet": res.get("snippet", ""),
-                                    "publisher": domain
-                                }
-                            })
+                                    "domain": domain,
+                                    "source_type": "web_search",
+                                    "platform": f"Fact Check Registry ({domain})",
+                                    "raw_metadata": {
+                                        "title": res["title"],
+                                        "url": res["url"],
+                                        "description": res.get("snippet", ""),
+                                        "snippet": res.get("snippet", ""),
+                                        "publisher": domain
+                                    }
+                                })
         except Exception as e:
-            logger.debug(f"Keyless fact check search error: {e}")
+            logger.debug(f"Keyless DDG fact check search error: {e}")
+
         return results
 
     async def _query_google_fact_check(self, client: httpx.AsyncClient, claim: str) -> List[Dict[str, Any]]:
