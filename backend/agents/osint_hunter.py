@@ -15,6 +15,7 @@ import email.utils
 import xml.etree.ElementTree as ET
 import urllib.parse
 from html.parser import HTMLParser
+from utils.text_helpers import extract_search_keywords
 
 logger = logging.getLogger(__name__)
 
@@ -294,7 +295,7 @@ class OSINTHunterAgent(BaseAgent):
         """Query Wikipedia OpenSearch API for relevant background entity knowledge."""
         results = []
         try:
-            tokens = [w for w in query.split() if len(w) > 3 and not w.lower().startswith("http")][:4]
+            tokens = extract_search_keywords(query, 4)
             search_terms = " ".join(tokens)
             if not search_terms:
                 return results
@@ -321,8 +322,8 @@ class OSINTHunterAgent(BaseAgent):
         """Query GDELT 2.0 Doc API for earliest news mentions."""
         results = []
         try:
-            # Format query keywords
-            keywords = " ".join([w for w in query.split() if len(w) > 3][:5])
+            # Format query keywords preserving political acronyms (DMK, TVK, BJP, CM, MP)
+            keywords = " ".join(extract_search_keywords(query, 5))
             if not keywords:
                 keywords = query[:50]
                 
@@ -369,7 +370,7 @@ class OSINTHunterAgent(BaseAgent):
             return results
 
         try:
-            keywords = " ".join([w for w in query.split() if len(w) > 3][:6])
+            keywords = " ".join(extract_search_keywords(query, 6))
             url = "https://newsapi.org/v2/everything"
             params = {
                 "q": keywords or query[:50],
@@ -427,9 +428,8 @@ class OSINTHunterAgent(BaseAgent):
         """Query Google News RSS for live news and fact-check citations (keyless)."""
         results = []
         try:
-            stop_words = {'published', 'statement', 'during', 'says', 'away', 'video', 'about', 'actor', 'leader'}
-            tokens = [w for w in re.findall(r'\w+', query) if len(w) > 2 and w.lower() not in stop_words]
-            clean_query = ' '.join(tokens[:5]) or query[:50]
+            tokens = extract_search_keywords(query, 5)
+            clean_query = ' '.join(tokens) or query[:50]
             url = f"https://news.google.com/rss/search?q={urllib.parse.quote(clean_query)}&hl=en-IN&gl=IN&ceid=IN:en"
 
             resp = await client.get(url)

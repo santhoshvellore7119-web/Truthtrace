@@ -7,6 +7,7 @@ import re
 import urllib.parse
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
+from utils.text_helpers import extract_search_keywords
 
 logger = logging.getLogger(__name__)
 
@@ -174,9 +175,8 @@ class FactCheckAgent(BaseAgent):
     async def _query_keyless_fact_check(self, client: httpx.AsyncClient, claim: str) -> List[Dict[str, Any]]:
         """Query Google News RSS and DuckDuckGo Lite specifically for fact-checks and registry debunks."""
         results = []
-        stop_words = {'published', 'statement', 'during', 'says', 'away', 'video', 'magazine', 'results', 'assembly', 'election', 'tamil', 'nadu', 'about', 'actor', 'leader'}
-        tokens = [w for w in re.findall(r'\w+', claim) if len(w) > 2 and w.lower() not in stop_words]
-        keywords = ' '.join(tokens[:3]) or claim[:40]
+        tokens = extract_search_keywords(claim, 4)
+        keywords = ' '.join(tokens) or claim[:40]
 
         # 1. Query Google News RSS for IFCN registry debunks (Free, reliable, unblocked)
         try:

@@ -10,6 +10,7 @@ import httpx
 import logging
 import os
 import re
+from utils.text_helpers import extract_search_keywords
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ class SocialHunterAgent(BaseAgent):
         """Search public Reddit JSON endpoint for matching submissions."""
         results = []
         try:
-            tokens = [t for t in re.findall(r'\w+', query.lower()) if len(t) > 3][:5]
+            tokens = extract_search_keywords(query, 5)
             search_query = " ".join(tokens) or query[:40]
 
             url = "https://www.reddit.com/search.json"
